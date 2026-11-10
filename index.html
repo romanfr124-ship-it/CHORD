@@ -34,12 +34,17 @@
         <div class="camera-placeholder" id="cameraPlaceholder">Camera preview will appear when you start analysing.</div>
       </div>
       <div class="hand-status-row"><span class="hand-indicator" id="handStatus">HAND TRACKING NOT STARTED</span><span class="muted small">Keep your fretting hand visible</span></div>
+      <div class="calibration-tools">
+        <button class="quiet-button" id="calibrateButton" type="button">Calibrate fretboard</button>
+        <p class="muted small" id="calibrationStatus">For best results, place the phone so the front camera can see the fretboard from above. Calibration uses the nut and 12th-fret corners.</p>
+        <p class="fret-readout" id="fretReadout">Fretboard not calibrated.</p>
+      </div>
       <div class="recording-row">
         <span class="muted small" id="recordingStatus">Audio and video will be recorded together.</span>
         <a id="recordingLink" class="recording-link" hidden>Save session video</a>
       </div>
       <div class="frame-strip" id="frameStrip" aria-label="Video frames captured during chord analysis"></div>
-      <p class="muted small">Keep the fretboard and your fretting hand clearly visible. Live hand landmarks are tracked on screen. Exact string and fret mapping is still being calibrated.</p>
+      <p class="muted small">Front camera preview is mirrored. Calibrate the four fretboard corners before attempting visual string/fret estimates. Estimates are approximate and must be checked against the audio.</p>
     </section>
     <section class="results-grid">
       <article class="panel">
@@ -61,7 +66,7 @@
         <pre id="tabOutput" class="tab-output">No chord detected yet.</pre>
       </article>
     </section>
-    <footer>CHORD · Prototype 0.4 · Audio and video are captured locally in your browser</footer>
+    <footer>CHORD · Prototype 0.5 · Audio and video are captured locally in your browser</footer>
   </main>
   <script type="module" src="./src/app.js"></script>
 </body>
