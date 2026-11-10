@@ -356,7 +356,7 @@ async function startListening(){
   try{
     mediaStream=await navigator.mediaDevices.getUserMedia({
       audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},
-      video:{facingMode:{ideal:"user"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}
+      video:{facingMode:{exact:"user"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}
     });
     cameraPreview.srcObject=mediaStream;
     await cameraPreview.play().catch(()=>{});
