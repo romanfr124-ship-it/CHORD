@@ -64,3 +64,21 @@ footer { text-align:center; color:#66717e; font-size:10px; margin-top:26px; }
   .hero { padding-top:0; }
   #chordName { min-height:88px; }
 }
+
+.video-panel { margin: 4px 0 14px; }
+.camera-frame {
+  position:relative; width:100%; aspect-ratio:16/9; overflow:hidden;
+  border-radius:11px; background:#080a0d; border:1px solid var(--line);
+}
+.camera-frame video { display:block; width:100%; height:100%; object-fit:cover; }
+.camera-placeholder {
+  position:absolute; inset:0; display:grid; place-items:center; padding:24px;
+  color:var(--muted); font-size:12px; text-align:center;
+}
+.camera-placeholder[hidden] { display:none; }
+.recording-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0; }
+.recording-link { color:var(--accent); font-size:12px; font-weight:700; text-decoration:none; }
+.recording-link[hidden] { display:none; }
+.frame-strip { display:flex; gap:8px; overflow-x:auto; min-height:0; }
+.frame-strip:empty { display:none; }
+.frame-strip img { flex:0 0 28%; width:28%; aspect-ratio:16/9; object-fit:cover; border-radius:7px; border:1px solid var(--line); }
