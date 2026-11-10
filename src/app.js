@@ -21,6 +21,9 @@ let spectrumData=null, timeData=null, state="OFF";
 let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0;
 let capturedScores=[], videoRecorder=null, recordedChunks=[], recordingUrl=null;
 let frameCaptureTimes=[], handLandmarker=null, handTrackingPromise=null, lastHandDetection=0, lastVideoTime=-1, handTrackingReady=false;
+let calibrationMode=false, calibrationPoints=[], currentLandmarks=null;
+const CALIBRATION_LABELS=["Nut — low E edge","12th fret — low E edge","Nut — high e edge","12th fret — high e edge"];
+const FINGER_TIPS=[{index:8,name:"Index"},{index:12,name:"Middle"},{index:16,name:"Ring"},{index:20,name:"Pinky"}];
 
 function setStatus(text, live=true){
   statusText.textContent=text;
@@ -78,7 +81,9 @@ function drawHandLandmarks(now){
     $("handStatus").textContent="SHOW YOUR FRET HAND TO CAMERA";
     return;
   }
+  currentLandmarks=landmarks;
   $("handStatus").textContent="HAND TRACKED · 21 LANDMARKS";
+  if(calibrationPoints.length===4) drawFretEstimates(landmarks,width,height);
   const connections=[
     [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
     [5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],
@@ -93,6 +98,15 @@ function drawHandLandmarks(now){
     handContext.lineTo(landmarks[b].x*width,landmarks[b].y*height);
     handContext.stroke();
   }
+  calibrationPoints.forEach((point,index)=>{
+    handContext.beginPath();
+    handContext.arc(point.x,point.y,Math.max(8,width*0.012),0,Math.PI*2);
+    handContext.fillStyle="#b8f36b";
+    handContext.fill();
+    handContext.fillStyle="#10160a";
+    handContext.font=`bold ${Math.max(12,width*0.018)}px sans-serif`;
+    handContext.fillText(String(index+1),point.x+10,point.y-10);
+  });
   landmarks.forEach((point,index)=>{
     const radius=index===4||index===8||index===12||index===16||index===20?Math.max(5,width*0.009):Math.max(3,width*0.005);
     handContext.beginPath();
@@ -105,6 +119,75 @@ function drawHandLandmarks(now){
   });
 }
 
+function bilinearPoint(u,v,points){
+  const [a,b,c,d]=points;
+  return {
+    x:a.x*(1-u)*(1-v)+b.x*u*(1-v)+c.x*(1-u)*v+d.x*u*v,
+    y:a.y*(1-u)*(1-v)+b.y*u*(1-v)+c.y*(1-u)*v+d.y*u*v
+  };
+}
+function mapPointToBoard(point,points){
+  let u=0.5,v=0.5;
+  for(let i=0;i<12;i++){
+    const p=bilinearPoint(u,v,points);
+    const du=bilinearPoint(u+0.001,v,points), dv=bilinearPoint(u,v+0.001,points);
+    const ax=(du.x-p.x)/0.001, ay=(du.y-p.y)/0.001;
+    const bx=(dv.x-p.x)/0.001, by=(dv.y-p.y)/0.001;
+    const ex=point.x-p.x, ey=point.y-p.y, det=ax*by-ay*bx;
+    if(Math.abs(det)<0.0001)break;
+    const stepU=(ex*by-ey*bx)/det, stepV=(ax*ey-ay*ex)/det;
+    u+=stepU;v+=stepV;
+    if(Math.abs(stepU)+Math.abs(stepV)<0.0001)break;
+  }
+  return {u,v};
+}
+function drawFretEstimates(landmarks,width,height){
+  const results=[];
+  for(const finger of FINGER_TIPS){
+    const point={x:landmarks[finger.index].x*width,y:landmarks[finger.index].y*height};
+    const board=mapPointToBoard(point,calibrationPoints);
+    if(board.u<0||board.u>1||board.v<0||board.v>1)continue;
+    const stringPosition=board.v*5;
+    const stringIndex=Math.round(stringPosition);
+    if(Math.abs(stringPosition-stringIndex)>0.62)continue;
+    const fretValue=-12*Math.log2(Math.max(0.0001,1-0.5*board.u));
+    const fret=Math.max(0,Math.min(12,Math.round(fretValue)));
+    if(fretValue<0.55)continue;
+    results.push({finger,stringIndex,fret,point});
+    handContext.beginPath();
+    handContext.arc(point.x,point.y,Math.max(10,width*0.014),0,Math.PI*2);
+    handContext.strokeStyle="#b8f36b";handContext.lineWidth=Math.max(3,width*0.004);handContext.stroke();
+    handContext.fillStyle="#b8f36b";
+    handContext.font=`bold ${Math.max(12,width*0.018)}px sans-serif`;
+    handContext.fillText(`${finger.name}: ${["Low E","A","D","G","B","High e"][stringIndex]} / fret ${fret}`,point.x+12,point.y-12);
+  }
+  const unique=[...new Map(results.map(r=>[r.stringIndex,{stringIndex:r.stringIndex,fret:r.fret,finger:r.finger.name}])).values()];
+  $("fretReadout").textContent=unique.length
+    ? unique.map(r=>`${["Low E","A","D","G","B","High e"][r.stringIndex]}: fret ${r.fret} (${r.finger})`).join(" · ")
+    : "No fingertip is confidently aligned with a calibrated string. Adjust the camera or calibration.";
+}
+function beginCalibration(){
+  if(!mediaStream){$("calibrationStatus").textContent="Start the camera first.";return;}
+  calibrationMode=true;calibrationPoints=[];
+  handOverlay.classList.add("is-calibrating");
+  $("calibrationStatus").textContent="Tap 1/4: the low-E edge of the nut (the end nearest the headstock).";
+  $("calibrateButton").textContent="Cancel calibration";
+}
+function handleCalibrationTap(event){
+  if(!calibrationMode||!cameraPreview.videoWidth)return;
+  const rect=handOverlay.getBoundingClientRect();
+  const shownX=(event.clientX-rect.left)/rect.width*handOverlay.width;
+  const y=(event.clientY-rect.top)/rect.height*handOverlay.height;
+  const x=handOverlay.width-shownX;
+  calibrationPoints.push({x,y});
+  if(calibrationPoints.length<4){
+    $("calibrationStatus").textContent=`Tap ${calibrationPoints.length+1}/4: ${CALIBRATION_LABELS[calibrationPoints.length]}.`;
+  }else{
+    calibrationMode=false;handOverlay.classList.remove("is-calibrating");
+    $("calibrationStatus").textContent="Fretboard calibrated to the 12th fret. Keep the same camera position.";
+    $("calibrateButton").textContent="Recalibrate fretboard";
+  }
+}
 function rmsLevel(){
   analyser.getFloatTimeDomainData(timeData);
   let sum=0;
@@ -273,12 +356,14 @@ async function startListening(){
   try{
     mediaStream=await navigator.mediaDevices.getUserMedia({
       audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},
-      video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}
+      video:{facingMode:{ideal:"user"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}
     });
     cameraPreview.srcObject=mediaStream;
     await cameraPreview.play().catch(()=>{});
     $("cameraPlaceholder").hidden=true;
-    $("cameraStatus").textContent="CAMERA LIVE";
+    $("cameraStatus").textContent="FRONT CAMERA LIVE";
+    const activeVideoTrack=mediaStream.getVideoTracks()[0];
+    if(activeVideoTrack) $("cameraStatus").textContent += activeVideoTrack.getSettings?.().facingMode==="user" ? "" : " · CHECK CAMERA";
     startVideoRecording(mediaStream);
     void initHandTracking();
     audioContext=new(window.AudioContext||window.webkitAudioContext)();
@@ -317,6 +402,7 @@ async function stopListening(){
   cameraPreview.pause();
   cameraPreview.srcObject=null;
   handContext.clearRect(0,0,handOverlay.width,handOverlay.height);
+  calibrationMode=false;handOverlay.classList.remove("is-calibrating");
   $("handStatus").textContent="HAND TRACKING STOPPED";
   $("cameraPlaceholder").hidden=false;
   $("cameraStatus").textContent="CAMERA OFF";
@@ -341,6 +427,8 @@ function resetDisplay(){
   capturedScores=[]; onsetFrames=0; silenceSince=0;
   if(state!=="OFF") state="ARMED";
 }
+$("calibrateButton").addEventListener("click",()=>calibrationMode?(()=>{calibrationMode=false;handOverlay.classList.remove("is-calibrating");$("calibrateButton").textContent="Calibrate fretboard";$("calibrationStatus").textContent="Calibration cancelled.";})():beginCalibration());
+handOverlay.addEventListener("pointerdown",handleCalibrationTap);
 listenButton.addEventListener("click",()=>mediaStream?stopListening():startListening());
 resetButton.addEventListener("click",resetDisplay);
 window.addEventListener("pagehide",()=>{
