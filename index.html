@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d10">
+  <meta name="description" content="CHORD listens to your guitar and identifies the chord.">
+  <title>CHORD — Guitar Recognition</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="CHORD home">CHORD<span class="brand-mark">.</span></a>
+      <div class="live-status"><span class="status-dot" id="statusDot"></span><span id="statusText">MICROPHONE OFF</span></div>
+    </header>
+
+    <section class="hero" aria-live="polite">
+      <p class="eyebrow">REAL-TIME GUITAR RECOGNITION</p>
+      <p class="section-label">DETECTED CHORD</p>
+      <h1 id="chordName">—</h1>
+      <p class="chord-description" id="chordDescription">Play a chord and let it ring</p>
+      <div class="waveform" id="waveform" aria-label="Live audio waveform"></div>
+      <div class="main-controls">
+        <button class="primary-button" id="listenButton" type="button">Start listening</button>
+        <button class="quiet-button" id="resetButton" type="button">Reset</button>
+      </div>
+      <p class="helper-text" id="helperText">Allow microphone access when prompted. Use standard tuning: E A D G B E.</p>
+    </section>
+
+    <section class="results-grid">
+      <article class="panel">
+        <div class="panel-heading"><h2>Detected notes</h2><span id="noteCount">0 notes</span></div>
+        <div class="note-list" id="noteList"><span class="muted">Waiting for audio…</span></div>
+      </article>
+      <article class="panel">
+        <div class="panel-heading"><h2>Match strength</h2><span>ESTIMATE</span></div>
+        <div class="confidence-value" id="confidenceValue">—</div>
+        <p class="muted small" id="confidenceText">Waiting for a stable chord</p>
+      </article>
+      <article class="panel fretboard-panel">
+        <div class="panel-heading"><h2>Suggested fingering</h2><span>STANDARD TUNING</span></div>
+        <div id="fretboard" class="empty-state">A suggested guitar shape will appear here.</div>
+        <p class="muted small">Suggested shape only — the sound cannot reveal the exact fingering used.</p>
+      </article>
+      <article class="panel">
+        <div class="panel-heading"><h2>Guitar tab</h2><span>LOW E → HIGH E</span></div>
+        <pre id="tabOutput" class="tab-output">No chord detected yet.</pre>
+      </article>
+    </section>
+
+    <footer>CHORD · Prototype 0.1 · Audio is analysed locally in your browser</footer>
+  </main>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
