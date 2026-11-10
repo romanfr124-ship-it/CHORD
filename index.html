@@ -26,6 +26,19 @@
       </div>
       <p class="helper-text" id="helperText">Allow microphone access when prompted. Use standard tuning: E A D G B E.</p>
     </section>
+    <section class="video-panel panel">
+      <div class="panel-heading"><h2>Fretting hand camera</h2><span id="cameraStatus">CAMERA OFF</span></div>
+      <div class="camera-frame">
+        <video id="cameraPreview" autoplay muted playsinline></video>
+        <div class="camera-placeholder" id="cameraPlaceholder">Camera preview will appear when you start analysing.</div>
+      </div>
+      <div class="recording-row">
+        <span class="muted small" id="recordingStatus">Audio and video will be recorded together.</span>
+        <a id="recordingLink" class="recording-link" hidden>Save session video</a>
+      </div>
+      <div class="frame-strip" id="frameStrip" aria-label="Video frames captured during chord analysis"></div>
+      <p class="muted small">Keep the fretboard and your fretting hand clearly visible. Video is captured alongside audio; automatic finger-position recognition is not enabled yet.</p>
+    </section>
     <section class="results-grid">
       <article class="panel">
         <div class="panel-heading"><h2>Detected notes</h2><span id="noteCount">0 notes</span></div>
@@ -46,7 +59,7 @@
         <pre id="tabOutput" class="tab-output">No chord detected yet.</pre>
       </article>
     </section>
-    <footer>CHORD · Prototype 0.2 · Audio is analysed locally in your browser</footer>
+    <footer>CHORD · Prototype 0.3 · Audio and video are captured locally in your browser</footer>
   </main>
   <script type="module" src="./src/app.js"></script>
 </body>
