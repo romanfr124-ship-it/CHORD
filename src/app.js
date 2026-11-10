@@ -20,42 +20,51 @@ let audioContext=null, mediaStream=null, analyser=null, animationFrame=null;
 let spectrumData=null, timeData=null, state="OFF";
 let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0;
 let capturedScores=[], videoRecorder=null, recordedChunks=[], recordingUrl=null;
-let frameCaptureTimes=[], handLandmarker=null, lastHandDetection=0, handTrackingReady=false;
+let frameCaptureTimes=[], handLandmarker=null, handTrackingPromise=null, lastHandDetection=0, lastVideoTime=-1, handTrackingReady=false;
 
 function setStatus(text, live=true){
   statusText.textContent=text;
   statusDot.classList.toggle("is-live",live);
 }
 async function initHandTracking(){
+  if(handLandmarker){$("handStatus").textContent="HAND TRACKING READY";return;}
+  if(handTrackingPromise){$("handStatus").textContent="LOADING HAND TRACKING MODEL";return handTrackingPromise;}
   $("handStatus").textContent="LOADING HAND TRACKING MODEL";
-  try{
-    const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm");
-    const fileset = await vision.FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-    );
-    handLandmarker = await vision.HandLandmarker.createFromOptions(fileset,{
-      baseOptions:{
-        modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-        delegate:"CPU"
-      },
-      runningMode:"VIDEO",
-      numHands:1,
-      minHandDetectionConfidence:0.55,
-      minHandPresenceConfidence:0.55,
-      minTrackingConfidence:0.5
-    });
-    handTrackingReady=true;
-    $("handStatus").textContent="HAND TRACKING READY";
-  }catch(error){
-    handTrackingReady=false;
-    $("handStatus").textContent="HAND TRACKING UNAVAILABLE";
-    $("recordingStatus").textContent="Camera recording works, but the hand-tracking model could not load. Check your internet connection and reload.";
-    console.error("CHORD hand tracking error:",error);
-  }
+  handTrackingPromise=(async()=>{
+    try{
+      const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm");
+      const fileset = await vision.FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+      );
+      const model = await vision.HandLandmarker.createFromOptions(fileset,{
+        baseOptions:{
+          modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate:"CPU"
+        },
+        runningMode:"VIDEO",
+        numHands:1,
+        minHandDetectionConfidence:0.55,
+        minHandPresenceConfidence:0.55,
+        minTrackingConfidence:0.5
+      });
+      handLandmarker=model;
+      handTrackingReady=true;
+      $("handStatus").textContent="HAND TRACKING READY";
+    }catch(error){
+      handTrackingReady=false;
+      handTrackingPromise=null;
+      $("handStatus").textContent="HAND TRACKING UNAVAILABLE";
+      $("recordingStatus").textContent="Camera recording works, but the hand-tracking model could not load. Check your internet connection and reload.";
+      console.error("CHORD hand tracking error:",error);
+    }
+  })();
+  return handTrackingPromise;
 }
 function drawHandLandmarks(now){
-  if(!handLandmarker||!cameraPreview.videoWidth||now-lastHandDetection<80)return;
+  if(!handLandmarker||!cameraPreview.videoWidth||now-lastHandDetection<140)return;
+  if(cameraPreview.currentTime===lastVideoTime)return;
   lastHandDetection=now;
+  lastVideoTime=cameraPreview.currentTime;
   const width=cameraPreview.videoWidth,height=cameraPreview.videoHeight;
   if(handOverlay.width!==width||handOverlay.height!==height){
     handOverlay.width=width;handOverlay.height=height;
@@ -182,7 +191,6 @@ function startVideoRecording(stream){
       }
       const blob=new Blob(recordedChunks,{type:videoRecorder.mimeType||"video/webm"});
       if(recordingUrl)URL.revokeObjectURL(recordingUrl);
-  if(handLandmarker)handLandmarker.close();
       recordingUrl=URL.createObjectURL(blob);
       const link=$("recordingLink");
       link.href=recordingUrl;
@@ -272,7 +280,7 @@ async function startListening(){
     $("cameraPlaceholder").hidden=true;
     $("cameraStatus").textContent="CAMERA LIVE";
     startVideoRecording(mediaStream);
-    initHandTracking();
+    void initHandTracking();
     audioContext=new(window.AudioContext||window.webkitAudioContext)();
     await audioContext.resume();
     const source=audioContext.createMediaStreamSource(mediaStream);
@@ -294,6 +302,7 @@ async function startListening(){
     cameraPreview.srcObject=null;
     $("cameraPlaceholder").hidden=false;
     $("cameraStatus").textContent="CAMERA OFF";
+    $("handStatus").textContent="HAND TRACKING NOT STARTED";
     $("recordingStatus").textContent="Camera or microphone access failed. Check Safari permissions and try again.";
     $("helperText").textContent="CHORD needs both camera and microphone access. Allow both in Safari website settings.";
     console.error("CHORD media access error:",error);
@@ -309,8 +318,6 @@ async function stopListening(){
   cameraPreview.srcObject=null;
   handContext.clearRect(0,0,handOverlay.width,handOverlay.height);
   $("handStatus").textContent="HAND TRACKING STOPPED";
-  if(handLandmarker){handLandmarker.close();handLandmarker=null;}
-  handTrackingReady=false;
   $("cameraPlaceholder").hidden=false;
   $("cameraStatus").textContent="CAMERA OFF";
   if(audioContext)await audioContext.close();
@@ -339,4 +346,5 @@ resetButton.addEventListener("click",resetDisplay);
 window.addEventListener("pagehide",()=>{
   if(mediaStream)mediaStream.getTracks().forEach(track=>track.stop());
   if(recordingUrl)URL.revokeObjectURL(recordingUrl);
+  if(handLandmarker){handLandmarker.close();handLandmarker=null;}
 });
