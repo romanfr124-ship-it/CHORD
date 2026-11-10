@@ -79,6 +79,7 @@ function drawHandLandmarks(now){
   const landmarks=result.landmarks?.[0];
   if(!landmarks){
     $("handStatus").textContent="SHOW YOUR FRET HAND TO CAMERA";
+    drawCalibrationMarkers(width);
     return;
   }
   currentLandmarks=landmarks;
@@ -98,15 +99,7 @@ function drawHandLandmarks(now){
     handContext.lineTo(landmarks[b].x*width,landmarks[b].y*height);
     handContext.stroke();
   }
-  calibrationPoints.forEach((point,index)=>{
-    handContext.beginPath();
-    handContext.arc(point.x,point.y,Math.max(8,width*0.012),0,Math.PI*2);
-    handContext.fillStyle="#b8f36b";
-    handContext.fill();
-    handContext.fillStyle="#10160a";
-    handContext.font=`bold ${Math.max(12,width*0.018)}px sans-serif`;
-    handContext.fillText(String(index+1),point.x+10,point.y-10);
-  });
+  drawCalibrationMarkers(width);
   landmarks.forEach((point,index)=>{
     const radius=index===4||index===8||index===12||index===16||index===20?Math.max(5,width*0.009):Math.max(3,width*0.005);
     handContext.beginPath();
@@ -119,6 +112,17 @@ function drawHandLandmarks(now){
   });
 }
 
+function drawCalibrationMarkers(width){
+  calibrationPoints.forEach((point,index)=>{
+    handContext.beginPath();
+    handContext.arc(point.x,point.y,Math.max(8,width*0.012),0,Math.PI*2);
+    handContext.fillStyle="#b8f36b";
+    handContext.fill();
+    handContext.fillStyle="#10160a";
+    handContext.font=`bold ${Math.max(12,width*0.018)}px sans-serif`;
+    handContext.fillText(String(index+1),point.x+10,point.y-10);
+  });
+}
 function bilinearPoint(u,v,points){
   const [a,b,c,d]=points;
   return {
