@@ -2,157 +2,179 @@ import { findSpectralPeaks, buildPitchClassScores, identifyChord } from "./chord
 import { getSuggestedShape, renderFretboard, renderTab } from "./guitar.js";
 
 const $ = (id) => document.getElementById(id);
-const listenButton = $("listenButton");
-const resetButton = $("resetButton");
-const waveform = $("waveform");
-const statusDot = $("statusDot");
-const statusText = $("statusText");
+const listenButton = $("listenButton"), resetButton = $("resetButton");
+const waveform = $("waveform"), statusDot = $("statusDot"), statusText = $("statusText");
+for (let index=0; index<31; index++) waveform.append(document.createElement("span"));
 
-for (let index = 0; index <  thirtyOne(); index++) {
-  const bar = document.createElement("span");
-  waveform.append(bar);
+const FFT_SIZE=16384;
+const ONSET_RMS=0.012;
+const SILENCE_RMS=0.005;
+const CAPTURE_DURATION_MS=1250;
+const SAMPLE_INTERVAL_MS=105;
+const SILENCE_RESET_MS=850;
+
+let audioContext=null, mediaStream=null, analyser=null, animationFrame=null;
+let spectrumData=null, timeData=null, state="OFF";
+let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0;
+let capturedScores=[];
+
+function setStatus(text, live=true){
+  statusText.textContent=text;
+  statusDot.classList.toggle("is-live",live);
 }
-function thirtyOne() { return 31; }
-
-let audioContext = null;
-let mediaStream = null;
-let analyser = null;
-let animationFrame = null;
-let frequencyData = null;
-let previousChord = "";
-let stableFrames = 0;
-let lastRenderAt = 0;
-
-function drawWaveform() {
-  if (!analyser || !frequencyData) return;
-  analyser.getFloatFrequencyData(frequencyData);
-  const bars = [...waveform.children];
-  const stride = Math.max(1, Math.floor(frequencyData.length / bars.length));
-  bars.forEach((bar, index) => {
-    const db = frequencyData[index * stride];
-    const height = Math.max(4, Math.min(52, (db + 100) * 0.9));
-    bar.style.height = height + "px";
+function rmsLevel(){
+  analyser.getFloatTimeDomainData(timeData);
+  let sum=0;
+  for(const value of timeData) sum+=value*value;
+  return Math.sqrt(sum/timeData.length);
+}
+function drawSpectrum(){
+  analyser.getFloatFrequencyData(spectrumData);
+  const bars=[...waveform.children], stride=Math.max(1,Math.floor(spectrumData.length/bars.length));
+  bars.forEach((bar,index)=>{
+    const db=spectrumData[index*stride];
+    bar.style.height=Math.max(4,Math.min(52,(db+100)*0.9))+"px";
   });
 }
-
-function showNotes(notes) {
-  const list = $("noteList");
-  list.replaceChildren();
-  notes.forEach((note) => {
-    const chip = document.createElement("span");
-    chip.className = "note-chip active";
-    chip.textContent = note;
-    list.append(chip);
+function median(values){
+  const sorted=[...values].sort((a,b)=>a-b);
+  const middle=Math.floor(sorted.length/2);
+  return sorted.length%2?sorted[middle]:(sorted[middle-1]+sorted[middle])/2;
+}
+function updateNotes(notes){
+  const list=$("noteList"); list.replaceChildren();
+  notes.forEach(note=>{
+    const chip=document.createElement("span");
+    chip.className="note-chip active"; chip.textContent=note; list.append(chip);
   });
-  $("noteCount").textContent = notes.length + (notes.length === 1 ? " note" : " notes");
+  $("noteCount").textContent=notes.length+(notes.length===1?" note":" notes");
 }
-
-function showChord(chord) {
-  $("chordName").textContent = chord.name;
-  $("chordDescription").textContent = "Detected notes: " + chord.noteNames.join(" · ");
-  $("confidenceValue").textContent = Math.round(chord.score * 100) + "%";
-  $("confidenceText").textContent = chord.extras
-    ? "Possible extra tones — try letting the chord ring"
-    : "Strongest template match (estimate)";
-  showNotes(chord.noteNames);
-  const shape = getSuggestedShape(chord.name);
-  renderFretboard($("fretboard"), shape);
-  renderTab($("tabOutput"), shape);
+function showChord(chord){
+  $("chordName").textContent=chord.name;
+  $("chordDescription").textContent="Identified from one captured chord";
+  $("confidenceValue").textContent=chord.confidenceLabel;
+  $("confidenceText").textContent="Clear separation from other chord matches";
+  updateNotes(chord.noteNames);
+  const shape=getSuggestedShape(chord.name);
+  renderFretboard($("fretboard"),shape);
+  renderTab($("tabOutput"),shape);
 }
+function showUncertain(){
+  $("chordName").textContent="—";
+  $("chordDescription").textContent="Chord not identified confidently";
+  $("confidenceValue").textContent="Uncertain";
+  $("confidenceText").textContent="No guess displayed. Try a clean, single strum.";
+  $("noteList").innerHTML='<span class="muted">Notes were ambiguous</span>';
+  $("noteCount").textContent="—";
+  $("fretboard").textContent="Waiting for a clearer chord.";
+  $("fretboard").className="empty-state";
+  $("tabOutput").textContent="No tab generated.";
+}
+function analyseCapture(){
+  if(capturedScores.length<5){showUncertain();return;}
+  const combined=Array.from({length:12},(_,pitchClass)=>({
+    pitchClass,
+    score:median(capturedScores.map(frame=>frame[pitchClass].score))
+  }));
+  const chord=identifyChord(combined);
+  if(chord) showChord(chord); else showUncertain();
+  state="LOCKED";
+  setStatus("CHORD CAPTURED");
+  $("helperText").textContent="One chord analysed. Let the sound stop completely to arm CHORD for the next chord.";
+}
+function processAudio(now){
+  if(!analyser||!audioContext)return;
+  drawSpectrum();
+  const level=rmsLevel();
 
-function processAudio() {
-  if (!analyser || !audioContext) return;
-  drawWaveform();
-  const peaks = findSpectralPeaks(frequencyData, audioContext.sampleRate, analyser.fftSize);
-  const scores = buildPitchClassScores(peaks);
-  const chord = identifyChord(scores);
-  const now = performance.now();
-
-  if (chord) {
-    if (chord.name === previousChord) stableFrames++;
-    else {
-      previousChord = chord.name;
-      stableFrames = 0;
+  if(state==="ARMED"){
+    if(level>ONSET_RMS) onsetFrames++; else onsetFrames=0;
+    if(onsetFrames>=2){
+      state="CAPTURING";
+      captureStarted=now;
+      lastSampleAt=0;
+      capturedScores=[];
+      $("chordName").textContent="…";
+      $("chordDescription").textContent="Capturing one chord";
+      $("confidenceValue").textContent="Analysing";
+      $("confidenceText").textContent="Holding back the result until the capture is complete";
+      setStatus("ANALYSING");
     }
-    if (stableFrames >= 2 && now - lastRenderAt > 250) {
-      showChord(chord);
-      lastRenderAt = now;
+  } else if(state==="CAPTURING"){
+    if(now-lastSampleAt>=SAMPLE_INTERVAL_MS){
+      const peaks=findSpectralPeaks(spectrumData,audioContext.sampleRate,analyser.fftSize);
+      capturedScores.push(buildPitchClassScores(peaks));
+      lastSampleAt=now;
     }
-  } else if (now - lastRenderAt > 1800) {
-    $("chordDescription").textContent = "Listening… play one clear chord";
+    if(now-captureStarted>=CAPTURE_DURATION_MS) analyseCapture();
+  } else if(state==="LOCKED"){
+    if(level<SILENCE_RMS){
+      if(!silenceSince) silenceSince=now;
+      if(now-silenceSince>=SILENCE_RESET_MS){
+        state="ARMED"; silenceSince=0; onsetFrames=0;
+        setStatus("READY FOR NEXT CHORD");
+        $("helperText").textContent="Ready. Play one chord, let it ring, then let it go quiet before the next.";
+      }
+    } else silenceSince=0;
   }
-  animationFrame = requestAnimationFrame(processAudio);
-}
 
-async function startListening() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    $("helperText").textContent = "Microphone capture is unavailable in this browser. Open the site using HTTPS in a current browser.";
+  animationFrame=requestAnimationFrame(processAudio);
+}
+async function startListening(){
+  if(!navigator.mediaDevices?.getUserMedia){
+    $("helperText").textContent="Microphone access needs a modern browser and a secure HTTPS address.";
     return;
   }
-  listenButton.disabled = true;
-  try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  listenButton.disabled=true;
+  try{
+    mediaStream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}
     });
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    audioContext=new(window.AudioContext||window.webkitAudioContext)();
     await audioContext.resume();
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 8192;
-    analyser.smoothingTimeConstant = 0.72;
+    const source=audioContext.createMediaStreamSource(mediaStream);
+    analyser=audioContext.createAnalyser();
+    analyser.fftSize=FFT_SIZE;
+    analyser.smoothingTimeConstant=0.25;
     source.connect(analyser);
-    frequencyData = new Float32Array(analyser.frequencyBinCount);
-
-    statusDot.classList.add("is-live");
-    statusText.textContent = "LISTENING";
+    spectrumData=new Float32Array(analyser.frequencyBinCount);
+    timeData=new Float32Array(analyser.fftSize);
+    state="ARMED"; onsetFrames=0; silenceSince=0;
     waveform.classList.add("is-live");
-    listenButton.textContent = "Stop listening";
-    $("helperText").textContent = "Listening continuously. Play one chord at a time and let it ring.";
-    processAudio();
-  } catch (error) {
-    $("helperText").textContent = "Could not access the microphone. Check Safari microphone permission and try again.";
-    console.error("CHORD microphone error:", error);
-  } finally {
-    listenButton.disabled = false;
-  }
+    setStatus("READY FOR CHORD");
+    listenButton.textContent="Stop listening";
+    $("helperText").textContent="Play one chord and let it ring. CHORD will capture, analyse, and then lock until silence.";
+    animationFrame=requestAnimationFrame(processAudio);
+  }catch(error){
+    $("helperText").textContent="Microphone access failed. Check Safari website microphone permissions and try again.";
+    console.error("CHORD microphone error:",error);
+  }finally{listenButton.disabled=false;}
 }
-
-async function stopListening() {
-  if (animationFrame) cancelAnimationFrame(animationFrame);
-  animationFrame = null;
-  if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop());
-  mediaStream = null;
-  if (audioContext) await audioContext.close();
-  audioContext = null;
-  analyser = null;
-  frequencyData = null;
-  statusDot.classList.remove("is-live");
-  statusText.textContent = "MICROPHONE OFF";
+async function stopListening(){
+  if(animationFrame)cancelAnimationFrame(animationFrame);
+  animationFrame=null;
+  if(mediaStream)mediaStream.getTracks().forEach(track=>track.stop());
+  mediaStream=null;
+  if(audioContext)await audioContext.close();
+  audioContext=null; analyser=null; spectrumData=null; timeData=null; state="OFF";
   waveform.classList.remove("is-live");
-  listenButton.textContent = "Start listening";
-  listenButton.disabled = false;
+  setStatus("MICROPHONE OFF",false);
+  listenButton.textContent="Start listening";
+  $("helperText").textContent="Microphone stopped.";
 }
-
-function resetDisplay() {
-  $("chordName").textContent = "—";
-  $("chordDescription").textContent = "Play a chord and let it ring";
-  $("confidenceValue").textContent = "—";
-  $("confidenceText").textContent = "Waiting for a stable chord";
-  $("noteList").innerHTML = '<span class="muted">Waiting for audio…</span>';
-  $("noteCount").textContent = "0 notes";
-  $("fretboard").textContent = "A suggested guitar shape will appear here.";
-  $("fretboard").className = "empty-state";
-  $("tabOutput").textContent = "No chord detected yet.";
-  previousChord = "";
-  stableFrames = 0;
+function resetDisplay(){
+  $("chordName").textContent="—";
+  $("chordDescription").textContent="Play a chord and let it ring";
+  $("confidenceValue").textContent="—";
+  $("confidenceText").textContent="Waiting for a stable chord";
+  $("noteList").innerHTML='<span class="muted">Waiting for audio…</span>';
+  $("noteCount").textContent="0 notes";
+  $("fretboard").textContent="A suggested guitar shape will appear here.";
+  $("fretboard").className="empty-state";
+  $("tabOutput").textContent="No chord detected yet.";
+  capturedScores=[]; onsetFrames=0; silenceSince=0;
+  if(state!=="OFF") state="ARMED";
 }
-
-listenButton.addEventListener("click", () => {
-  if (mediaStream) stopListening();
-  else startListening();
-});
-resetButton.addEventListener("click", resetDisplay);
-
-window.addEventListener("pagehide", () => {
-  if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop());
-});
+listenButton.addEventListener("click",()=>mediaStream?stopListening():startListening());
+resetButton.addEventListener("click",resetDisplay);
+window.addEventListener("pagehide",()=>{if(mediaStream)mediaStream.getTracks().forEach(track=>track.stop());});
