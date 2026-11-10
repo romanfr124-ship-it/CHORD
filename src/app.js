@@ -5,6 +5,8 @@ const $ = (id) => document.getElementById(id);
 const listenButton = $("listenButton"), resetButton = $("resetButton");
 const waveform = $("waveform"), statusDot = $("statusDot"), statusText = $("statusText");
 const cameraPreview = $("cameraPreview");
+const handOverlay = $("handOverlay");
+const handContext = handOverlay.getContext("2d");
 for (let index=0; index<31; index++) waveform.append(document.createElement("span"));
 
 const FFT_SIZE=16384;
@@ -18,12 +20,82 @@ let audioContext=null, mediaStream=null, analyser=null, animationFrame=null;
 let spectrumData=null, timeData=null, state="OFF";
 let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0;
 let capturedScores=[], videoRecorder=null, recordedChunks=[], recordingUrl=null;
-let frameCaptureTimes=[];
+let frameCaptureTimes=[], handLandmarker=null, lastHandDetection=0, handTrackingReady=false;
 
 function setStatus(text, live=true){
   statusText.textContent=text;
   statusDot.classList.toggle("is-live",live);
 }
+async function initHandTracking(){
+  $("handStatus").textContent="LOADING HAND TRACKING MODEL";
+  try{
+    const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm");
+    const fileset = await vision.FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    handLandmarker = await vision.HandLandmarker.createFromOptions(fileset,{
+      baseOptions:{
+        modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate:"CPU"
+      },
+      runningMode:"VIDEO",
+      numHands:1,
+      minHandDetectionConfidence:0.55,
+      minHandPresenceConfidence:0.55,
+      minTrackingConfidence:0.5
+    });
+    handTrackingReady=true;
+    $("handStatus").textContent="HAND TRACKING READY";
+  }catch(error){
+    handTrackingReady=false;
+    $("handStatus").textContent="HAND TRACKING UNAVAILABLE";
+    $("recordingStatus").textContent="Camera recording works, but the hand-tracking model could not load. Check your internet connection and reload.";
+    console.error("CHORD hand tracking error:",error);
+  }
+}
+function drawHandLandmarks(now){
+  if(!handLandmarker||!cameraPreview.videoWidth||now-lastHandDetection<80)return;
+  lastHandDetection=now;
+  const width=cameraPreview.videoWidth,height=cameraPreview.videoHeight;
+  if(handOverlay.width!==width||handOverlay.height!==height){
+    handOverlay.width=width;handOverlay.height=height;
+  }
+  handContext.clearRect(0,0,width,height);
+  let result;
+  try{result=handLandmarker.detectForVideo(cameraPreview,now);}
+  catch(error){console.warn("Hand landmark frame skipped:",error);return;}
+  const landmarks=result.landmarks?.[0];
+  if(!landmarks){
+    $("handStatus").textContent="SHOW YOUR FRET HAND TO CAMERA";
+    return;
+  }
+  $("handStatus").textContent="HAND TRACKED · 21 LANDMARKS";
+  const connections=[
+    [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+    [5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],
+    [13,17],[17,18],[18,19],[19,20],[0,17]
+  ];
+  handContext.lineWidth=Math.max(3,width*0.004);
+  handContext.strokeStyle="#b8f36b";
+  handContext.lineCap="round";
+  for(const [a,b] of connections){
+    handContext.beginPath();
+    handContext.moveTo(landmarks[a].x*width,landmarks[a].y*height);
+    handContext.lineTo(landmarks[b].x*width,landmarks[b].y*height);
+    handContext.stroke();
+  }
+  landmarks.forEach((point,index)=>{
+    const radius=index===4||index===8||index===12||index===16||index===20?Math.max(5,width*0.009):Math.max(3,width*0.005);
+    handContext.beginPath();
+    handContext.arc(point.x*width,point.y*height,radius,0,Math.PI*2);
+    handContext.fillStyle="#f2f4f6";
+    handContext.fill();
+    handContext.strokeStyle="#10160a";
+    handContext.lineWidth=2;
+    handContext.stroke();
+  });
+}
+
 function rmsLevel(){
   analyser.getFloatTimeDomainData(timeData);
   let sum=0;
@@ -110,6 +182,7 @@ function startVideoRecording(stream){
       }
       const blob=new Blob(recordedChunks,{type:videoRecorder.mimeType||"video/webm"});
       if(recordingUrl)URL.revokeObjectURL(recordingUrl);
+  if(handLandmarker)handLandmarker.close();
       recordingUrl=URL.createObjectURL(blob);
       const link=$("recordingLink");
       link.href=recordingUrl;
@@ -140,6 +213,7 @@ function analyseCapture(){
 function processAudio(now){
   if(!analyser||!audioContext)return;
   drawSpectrum();
+  drawHandLandmarks(now);
   const level=rmsLevel();
 
   if(state==="ARMED"){
@@ -198,6 +272,7 @@ async function startListening(){
     $("cameraPlaceholder").hidden=true;
     $("cameraStatus").textContent="CAMERA LIVE";
     startVideoRecording(mediaStream);
+    initHandTracking();
     audioContext=new(window.AudioContext||window.webkitAudioContext)();
     await audioContext.resume();
     const source=audioContext.createMediaStreamSource(mediaStream);
@@ -232,6 +307,10 @@ async function stopListening(){
   mediaStream=null;
   cameraPreview.pause();
   cameraPreview.srcObject=null;
+  handContext.clearRect(0,0,handOverlay.width,handOverlay.height);
+  $("handStatus").textContent="HAND TRACKING STOPPED";
+  if(handLandmarker){handLandmarker.close();handLandmarker=null;}
+  handTrackingReady=false;
   $("cameraPlaceholder").hidden=false;
   $("cameraStatus").textContent="CAMERA OFF";
   if(audioContext)await audioContext.close();
