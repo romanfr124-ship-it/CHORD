@@ -37,7 +37,7 @@
       <div class="calibration-tools">
         <button class="quiet-button" id="calibrateButton" type="button">Calibrate fretboard</button>
         <p class="muted small" id="calibrationStatus">For best results, place the phone so the front camera can see the fretboard from above. Calibration uses the nut and 12th-fret corners.</p>
-        <p class="fret-readout" id="fretReadout">Fretboard not calibrated.</p>
+        <p class="fret-readout" id="fretReadout">Fretboard not calibrated. Supports visible positions up to the 24th fret and possible barre detection.</p>
       </div>
       <div class="recording-row">
         <span class="muted small" id="recordingStatus">Audio and video will be recorded together.</span>
@@ -59,14 +59,14 @@
       <article class="panel fretboard-panel">
         <div class="panel-heading"><h2>Suggested fingering</h2><span>STANDARD TUNING</span></div>
         <div id="fretboard" class="empty-state">A suggested guitar shape will appear here.</div>
-        <p class="muted small">Suggested shape only — audio cannot reveal the exact fingering used.</p>
+        <p class="muted small">Suggested shape only. Visual estimates can now include upper frets and possible barre positions.</p>
       </article>
       <article class="panel">
         <div class="panel-heading"><h2>Guitar tab</h2><span>LOW E → HIGH E</span></div>
         <pre id="tabOutput" class="tab-output">No chord detected yet.</pre>
       </article>
     </section>
-    <footer>CHORD · Prototype 0.5 · Audio and video are captured locally in your browser</footer>
+    <footer>CHORD · Prototype 0.6 · Mirrored video and visual fret estimates</footer>
   </main>
   <script type="module" src="./src/app.js"></script>
 </body>
