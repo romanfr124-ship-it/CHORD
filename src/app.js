@@ -21,7 +21,7 @@ let spectrumData=null, timeData=null, state="OFF";
 let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0;
 let capturedScores=[], videoRecorder=null, recordedChunks=[], recordingUrl=null;
 let frameCaptureTimes=[], handLandmarker=null, handTrackingPromise=null, lastHandDetection=0, lastVideoTime=-1, handTrackingReady=false;
-let calibrationMode=false, calibrationPoints=[], currentLandmarks=null;
+let calibrationMode=false, calibrationPoints=[], currentLandmarks=null, mirroredCanvasStream=null, mirrorDrawFrame=null;
 const CALIBRATION_LABELS=["Nut — low E edge","12th fret — low E edge","Nut — high e edge","12th fret — high e edge"];
 const FINGER_TIPS=[{index:8,name:"Index"},{index:12,name:"Middle"},{index:16,name:"Ring"},{index:20,name:"Pinky"}];
 
@@ -150,7 +150,7 @@ function drawFretEstimates(landmarks,width,height){
   for(const finger of FINGER_TIPS){
     const point={x:landmarks[finger.index].x*width,y:landmarks[finger.index].y*height};
     const board=mapPointToBoard(point,calibrationPoints);
-    if(board.u<0||board.u>1||board.v<0||board.v>1)continue;
+    if(board.u<0||board.u>1.65||board.v<0||board.v>1)continue;
     const stringPosition=board.v*5;
     const stringIndex=Math.round(stringPosition);
     if(Math.abs(stringPosition-stringIndex)>0.62)continue;
@@ -165,9 +165,31 @@ function drawFretEstimates(landmarks,width,height){
     handContext.font=`bold ${Math.max(12,width*0.018)}px sans-serif`;
     handContext.fillText(`${finger.name}: ${["Low E","A","D","G","B","High e"][stringIndex]} / fret ${fret}`,point.x+12,point.y-12);
   }
+  const indexFingerPoints=[5,6,7,8].map(index=>({
+    x:landmarks[index].x*width,y:landmarks[index].y*height
+  }));
+  const barreSamples=[];
+  for(let segment=0;segment<indexFingerPoints.length-1;segment++){
+    const a=indexFingerPoints[segment],b=indexFingerPoints[segment+1];
+    for(let step=0;step<=8;step++){
+      const t=step/8;
+      const sample={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+      const board=mapPointToBoard(sample,calibrationPoints);
+      if(board.u<0||board.u>1.65||board.v<0||board.v>1)continue;
+      const fretValue=-12*Math.log2(Math.max(0.0001,1-0.5*board.u));
+      const fret=Math.max(1,Math.min(24,Math.round(fretValue)));
+      if(fretValue>=0.55)barreSamples.push({string:board.v*5,fret});
+    }
+  }
+  const barreStrings=[...new Set(barreSamples.filter(s=>Math.abs(s.fret-median(barreSamples.map(x=>x.fret)))<=1)
+    .map(s=>Math.round(s.string)))];
+  const barreFret=barreSamples.length?Math.round(median(barreSamples.map(s=>s.fret))):0;
+  const isBarre=barreStrings.length>=3&&Math.max(...barreStrings)-Math.min(...barreStrings)>=2;
   const unique=[...new Map(results.map(r=>[r.stringIndex,{stringIndex:r.stringIndex,fret:r.fret,finger:r.finger.name}])).values()];
-  $("fretReadout").textContent=unique.length
-    ? unique.map(r=>`${["Low E","A","D","G","B","High e"][r.stringIndex]}: fret ${r.fret} (${r.finger})`).join(" · ")
+  const readout=unique.map(r=>`${["Low E","A","D","G","B","High e"][r.stringIndex]}: fret ${r.fret} (${r.finger})`);
+  if(isBarre)readout.unshift(`Possible index barre across ${barreStrings.length} strings at fret ${barreFret}`);
+  $("fretReadout").textContent=readout.length
+    ? readout.join(" · ")
     : "No fingertip is confidently aligned with a calibrated string. Adjust the camera or calibration.";
 }
 function beginCalibration(){
@@ -256,6 +278,29 @@ function captureVideoFrame(label){
   if(strip.children.length>=6)strip.firstElementChild.remove();
   strip.append(image);
 }
+function createMirroredRecordingStream(stream){
+  const videoTrack=stream.getVideoTracks()[0];
+  if(!videoTrack||!cameraPreview.videoWidth||!HTMLCanvasElement.prototype.captureStream)return stream;
+  const canvas=document.createElement("canvas");
+  canvas.width=cameraPreview.videoWidth;canvas.height=cameraPreview.videoHeight;
+  const context=canvas.getContext("2d");
+  const draw=()=>{
+    if(!cameraPreview.videoWidth)return;
+    context.save();
+    context.clearRect(0,0,canvas.width,canvas.height);
+    context.translate(canvas.width,0);
+    context.scale(-1,1);
+    context.drawImage(cameraPreview,0,0,canvas.width,canvas.height);
+    context.restore();
+    mirrorDrawFrame=requestAnimationFrame(draw);
+  };
+  draw();
+  mirroredCanvasStream=canvas.captureStream(30);
+  return new MediaStream([
+    ...stream.getAudioTracks(),
+    ...mirroredCanvasStream.getVideoTracks()
+  ]);
+}
 function startVideoRecording(stream){
   recordedChunks=[];
   $("recordingLink").hidden=true;
@@ -267,7 +312,7 @@ function startVideoRecording(stream){
   const candidates=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4","video/webm;codecs=vp8,opus","video/webm"];
   const mimeType=candidates.find(type=>MediaRecorder.isTypeSupported?.(type));
   try{
-    videoRecorder=mimeType?new MediaRecorder(stream,{mimeType}):new MediaRecorder(stream);
+    const recordingStream=createMirroredRecordingStream(stream);\n    videoRecorder=mimeType?new MediaRecorder(recordingStream,{mimeType}):new MediaRecorder(recordingStream);
     videoRecorder.addEventListener("dataavailable",event=>{
       if(event.data&&event.data.size)recordedChunks.push(event.data);
     });
@@ -401,6 +446,9 @@ async function stopListening(){
   if(animationFrame)cancelAnimationFrame(animationFrame);
   animationFrame=null;
   if(videoRecorder&&videoRecorder.state!=="inactive")videoRecorder.stop();
+  if(mirrorDrawFrame)cancelAnimationFrame(mirrorDrawFrame);
+  mirrorDrawFrame=null;
+  if(mirroredCanvasStream){mirroredCanvasStream.getTracks().forEach(track=>track.stop());mirroredCanvasStream=null;}
   if(mediaStream)mediaStream.getTracks().forEach(track=>track.stop());
   mediaStream=null;
   cameraPreview.pause();
