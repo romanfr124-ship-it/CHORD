@@ -312,7 +312,8 @@ function startVideoRecording(stream){
   const candidates=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4","video/webm;codecs=vp8,opus","video/webm"];
   const mimeType=candidates.find(type=>MediaRecorder.isTypeSupported?.(type));
   try{
-    const recordingStream=createMirroredRecordingStream(stream);\n    videoRecorder=mimeType?new MediaRecorder(recordingStream,{mimeType}):new MediaRecorder(recordingStream);
+    const recordingStream=createMirroredRecordingStream(stream);
+    videoRecorder=mimeType?new MediaRecorder(recordingStream,{mimeType}):new MediaRecorder(recordingStream);
     videoRecorder.addEventListener("dataavailable",event=>{
       if(event.data&&event.data.size)recordedChunks.push(event.data);
     });
