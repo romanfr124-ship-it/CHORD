@@ -56,6 +56,20 @@
         <div class="confidence-value" id="confidenceValue">—</div>
         <p class="muted small" id="confidenceText">Waiting for a complete chord analysis</p>
       </article>
+      <article class="panel diagnostics-panel">
+        <div class="panel-heading"><h2>Audio diagnostics</h2><span id="audioState">WAITING FOR INPUT</span></div>
+        <div class="diagnostic-meter"><div id="inputMeterFill"></div></div>
+        <div class="diagnostic-stats">
+          <div><span>INPUT LEVEL</span><strong id="inputLevel">— dB</strong></div>
+          <div><span>SPECTRAL PEAKS</span><strong id="peakCount">—</strong></div>
+          <div><span>CAPTURE FRAMES</span><strong id="frameCount">—</strong></div>
+        </div>
+        <p class="diagnostic-caption">Strongest detected pitch classes</p>
+        <div id="diagnosticNotes" class="diagnostic-notes"><span class="muted">Start listening to inspect microphone input.</span></div>
+        <p class="diagnostic-caption">Top chord candidates</p>
+        <div id="candidateList" class="candidate-list"><span class="muted">Candidates appear after a chord capture.</span></div>
+        <p class="muted small" id="diagnosticReason">Diagnostics show raw evidence and ranking, not a guarantee of correctness.</p>
+      </article>
       <article class="panel fretboard-panel">
         <div class="panel-heading"><h2>Suggested fingering</h2><span>STANDARD TUNING</span></div>
         <div id="fretboard" class="empty-state">A suggested guitar shape will appear here.</div>
