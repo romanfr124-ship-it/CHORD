@@ -39,20 +39,14 @@ export function buildPitchClassScores(peaks) {
   const maximum=Math.max(...energy,0.000001);
   return energy.map((value,pitchClass)=>({pitchClass,score:value/maximum}));
 }
-export function identifyChord(pitchScores) {
+export function rankChordCandidates(pitchScores) {
   const values=Array(12).fill(0);
   for(const item of pitchScores) values[item.pitchClass]=item.score;
-
-  // A guitar strum rarely produces six equally loud fundamentals. Compare
-  // templates using their strongest supported tones and penalise unrelated
-  // notes, rather than rejecting a chord because one string is quiet.
   const ranked=[];
   for(let root=0;root<12;root++) for(const [suffix,intervals] of CHORD_TYPES){
     const expected=intervals.map(interval=>(root+interval)%12);
     const target=expected.map(note=>values[note]).sort((a,b)=>b-a);
-    const strongest=target[0]||0;
-    const second=target[1]||0;
-    const third=target[2]||0;
+    const strongest=target[0]||0, second=target[1]||0, third=target[2]||0;
     const averageSupport=target.reduce((sum,value)=>sum+value,0)/target.length;
     const hits=target.filter(value=>value>=0.19).length;
     const extras=values.filter((value,note)=>!expected.includes(note)&&value>=0.18);
@@ -63,20 +57,21 @@ export function identifyChord(pitchScores) {
     ranked.push({root,suffix,expected,score,averageSupport,strongest,second,third,hits,extraEnergy,missingTones});
   }
   ranked.sort((a,b)=>b.score-a.score);
-  const best=ranked[0], runnerUp=ranked[1], margin=best.score-runnerUp.score;
+  return ranked.map((candidate,index)=>({
+    ...candidate,
+    name:NOTE_NAMES[candidate.root]+candidate.suffix,
+    margin:index===0?candidate.score-(ranked[1]?.score||0):undefined
+  }));
+}
+export function identifyChord(pitchScores) {
+  const ranked=rankChordCandidates(pitchScores);
+  const best=ranked[0], margin=best?.margin??0;
   if(!best||best.strongest<0.30||best.second<0.22||best.hits<2||best.score<0.25) return null;
-
-  const detected=best.expected
-    .filter(note=>values[note]>=0.14)
-    .map(note=>NOTE_NAMES[note]);
+  const values=Array(12).fill(0);
+  for(const item of pitchScores) values[item.pitchClass]=item.score;
+  const detected=best.expected.filter(note=>values[note]>=0.14).map(note=>NOTE_NAMES[note]);
   const confidenceLabel=margin>=0.09&&best.third>=0.20?"High"
     :margin>=0.035?"Moderate":"Low";
-  return {
-    ...best,
-    margin,
-    name:NOTE_NAMES[best.root]+best.suffix,
-    noteNames:detected,
-    confidenceLabel
-  };
+  return {...best,margin,noteNames:detected,confidenceLabel};
 }
 export { NOTE_NAMES };
