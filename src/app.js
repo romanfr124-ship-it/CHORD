@@ -359,7 +359,7 @@ function processAudio(now){
   const level=rmsLevel();
 
   if(state==="ARMED"){
-    if(level<0.008) noiseFloor=Math.min(0.004,noiseFloor*0.97+level*0.03);
+    if(level<0.008) noiseFloor=Math.min(0.0015,noiseFloor*0.97+level*0.03);
     const onsetThreshold=Math.max(ONSET_RMS,noiseFloor*2.4);
     if(level>onsetThreshold) onsetFrames++; else onsetFrames=0;
     if(onsetFrames>=2){
