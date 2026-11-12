@@ -24,7 +24,7 @@
         <button class="primary-button" id="listenButton" type="button">Start listening</button>
         <button class="quiet-button" id="resetButton" type="button">Reset</button>
       </div>
-      <p class="helper-text" id="helperText">Allow microphone access when prompted. Use standard tuning: E A D G B E.</p>
+      <p class="helper-text" id="helperText">Allow microphone access when prompted. For best pickup, keep your phone close to the guitar and use standard tuning: E A D G B E.</p>
     </section>
     <section class="video-panel panel">
       <div class="panel-heading"><h2>Fretting hand camera</h2><span id="cameraStatus">CAMERA OFF</span></div>
@@ -44,7 +44,7 @@
         <a id="recordingLink" class="recording-link" hidden>Save session video</a>
       </div>
       <div class="frame-strip" id="frameStrip" aria-label="Video frames captured during chord analysis"></div>
-      <p class="muted small">Front camera preview is mirrored. Calibrate the four fretboard corners before attempting visual string/fret estimates. Estimates are approximate and must be checked against the audio.</p>
+      <p class="muted small">Front camera preview is mirrored. Calibrate the four fretboard corners before visual fret estimates. Audio input is boosted for quieter playing; use a quiet room and play one clean chord at a time. Estimates are approximate and must be checked against the audio.</p>
     </section>
     <section class="results-grid">
       <article class="panel">
@@ -66,7 +66,7 @@
         <pre id="tabOutput" class="tab-output">No chord detected yet.</pre>
       </article>
     </section>
-    <footer>CHORD · Prototype 0.6 · Mirrored video and visual fret estimates</footer>
+    <footer>CHORD · Prototype 0.7 · Improved audio pickup and chord analysis</footer>
   </main>
   <script type="module" src="./src/app.js"></script>
 </body>
