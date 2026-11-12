@@ -23,7 +23,7 @@ let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0, lastDiagnos
 let capturedScores=[], videoRecorder=null, recordedChunks=[], recordingUrl=null;
 let frameCaptureTimes=[], handLandmarker=null, handTrackingPromise=null, lastHandDetection=0, lastVideoTime=-1, handTrackingReady=false;
 let calibrationMode=false, calibrationPoints=[], currentLandmarks=null, mirroredCanvasStream=null, mirrorDrawFrame=null;
-const CALIBRATION_LABELS=["Nut — low E edge","12th fret — low E edge","Nut — high e edge","12th fret — high e edge"];
+const CALIBRATION_LABELS=["Low E string at the nut","Low E string at the 12th fret","High e string at the nut","High e string at the 12th fret"];
 const FINGER_TIPS=[{index:8,name:"Index"},{index:12,name:"Middle"},{index:16,name:"Ring"},{index:20,name:"Pinky"}];
 
 function setStatus(text, live=true){
@@ -193,27 +193,62 @@ function drawFretEstimates(landmarks,width,height){
     ? readout.join(" · ")
     : "No fingertip is confidently aligned with a calibrated string. Adjust the camera or calibration.";
 }
+function calibrationArea(points){
+  const polygon=[points[0],points[1],points[3],points[2]];
+  let area=0;
+  for(let i=0;i<polygon.length;i++){
+    const next=polygon[(i+1)%polygon.length];
+    area+=polygon[i].x*next.y-next.x*polygon[i].y;
+  }
+  return Math.abs(area)/2;
+}
+function updateCalibrationPrompt(){
+  const count=calibrationPoints.length;
+  $("calibrationUndoButton").hidden=count===0;
+  $("calibrationStatus").textContent=count===4
+    ?"Checking calibration…"
+    :`Point ${count+1} of 4: tap ${CALIBRATION_LABELS[count]}.`;
+}
 function beginCalibration(){
-  if(!mediaStream){$("calibrationStatus").textContent="Start the camera first.";return;}
+  if(!cameraStream||!cameraPreview.videoWidth){$("calibrationStatus").textContent="Start the camera first. Audio-only mode cannot calibrate the fretboard.";return;}
   calibrationMode=true;calibrationPoints=[];
   handOverlay.classList.add("is-calibrating");
-  $("calibrationStatus").textContent="Tap 1/4: the low-E edge of the nut (the end nearest the headstock).";
   $("calibrateButton").textContent="Cancel calibration";
+  updateCalibrationPrompt();
+}
+function undoCalibrationPoint(){
+  if(!calibrationMode||!calibrationPoints.length)return;
+  calibrationPoints.pop();
+  updateCalibrationPrompt();
 }
 function handleCalibrationTap(event){
   if(!calibrationMode||!cameraPreview.videoWidth)return;
+  event.preventDefault();
   const rect=handOverlay.getBoundingClientRect();
   const shownX=(event.clientX-rect.left)/rect.width*handOverlay.width;
   const y=(event.clientY-rect.top)/rect.height*handOverlay.height;
   const x=handOverlay.width-shownX;
   calibrationPoints.push({x,y});
-  if(calibrationPoints.length<4){
-    $("calibrationStatus").textContent=`Tap ${calibrationPoints.length+1}/4: ${CALIBRATION_LABELS[calibrationPoints.length]}.`;
-  }else{
-    calibrationMode=false;handOverlay.classList.remove("is-calibrating");
-    $("calibrationStatus").textContent="Fretboard calibrated to the 12th fret. Keep the same camera position.";
-    $("calibrateButton").textContent="Recalibrate fretboard";
+  if(calibrationPoints.length<4){updateCalibrationPrompt();return;}
+  const [lowNut,low12,highNut,high12]=calibrationPoints;
+  const minEdge=Math.min(
+    Math.hypot(low12.x-lowNut.x,low12.y-lowNut.y),
+    Math.hypot(high12.x-highNut.x,high12.y-highNut.y),
+    Math.hypot(highNut.x-lowNut.x,highNut.y-lowNut.y),
+    Math.hypot(high12.x-low12.x,high12.y-low12.y)
+  );
+  const area=calibrationArea(calibrationPoints);
+  const frameArea=handOverlay.width*handOverlay.height;
+  if(minEdge<Math.min(handOverlay.width,handOverlay.height)*0.08||area<frameArea*0.012){
+    calibrationPoints=[];
+    $("calibrationUndoButton").hidden=true;
+    $("calibrationStatus").textContent="Those points are too close together or do not outline the fretboard. Try again, tapping the four corners in order.";
+    return;
   }
+  calibrationMode=false;handOverlay.classList.remove("is-calibrating");
+  $("calibrationUndoButton").hidden=true;
+  $("calibrationStatus").textContent="Calibration complete. Keep the phone still and the fretboard in the same position.";
+  $("calibrateButton").textContent="Recalibrate fretboard";
 }
 function rmsLevel(){
   analyser.getFloatTimeDomainData(timeData);
@@ -578,7 +613,8 @@ function resetDisplay(){
   capturedScores=[]; onsetFrames=0; silenceSince=0; $("candidateList").innerHTML='<span class="muted">Candidates appear after a chord capture.</span>'; $("diagnosticReason").textContent="Diagnostics show raw evidence and ranking, not a guarantee of correctness.";
   if(state!=="OFF") state="ARMED";
 }
-$("calibrateButton").addEventListener("click",()=>calibrationMode?(()=>{calibrationMode=false;handOverlay.classList.remove("is-calibrating");$("calibrateButton").textContent="Calibrate fretboard";$("calibrationStatus").textContent="Calibration cancelled.";})():beginCalibration());
+$("calibrateButton").addEventListener("click",()=>calibrationMode?(()=>{calibrationMode=false;calibrationPoints=[];handOverlay.classList.remove("is-calibrating");$("calibrationUndoButton").hidden=true;$("calibrateButton").textContent="Calibrate fretboard";$("calibrationStatus").textContent="Calibration cancelled.";})():beginCalibration());
+$("calibrationUndoButton").addEventListener("click",undoCalibrationPoint);
 handOverlay.addEventListener("pointerdown",handleCalibrationTap);
 listenButton.addEventListener("click",()=>mediaStream?stopListening():startListening());
 resetButton.addEventListener("click",resetDisplay);
