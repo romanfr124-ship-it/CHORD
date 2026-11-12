@@ -276,12 +276,13 @@ function renderCandidateDiagnostics(scores){
     const name=document.createElement("strong");name.textContent=(index+1)+". "+candidate.name;
     const score=document.createElement("span");score.textContent="Score "+candidate.score.toFixed(3);
     const evidence=document.createElement("small");
-    evidence.textContent="Notes "+candidate.hits+"/"+candidate.expected.length+" · missing "+candidate.missingTones;
+    evidence.textContent="Root "+(candidate.rootSupport*100).toFixed(0)+"% · tones "+candidate.hits+"/"+candidate.expected.length+" · missing "+candidate.missingTones;
     item.append(name,score,evidence);list.append(item);
   });
   const best=candidates[0];
   let reason="Candidate ranking available.";
   if(!best)reason="No chord candidates could be calculated.";
+  else if(best.rootSupport<0.16)reason="Weak root evidence: the proposed chord root is not clearly present.";
   else if(best.strongest<0.30)reason="Rejected: strongest expected note is below 0.30.";
   else if(best.second<0.22)reason="Rejected: fewer than two sufficiently strong chord tones.";
   else if(best.hits<2)reason="Rejected: fewer than two expected notes passed the evidence threshold.";
