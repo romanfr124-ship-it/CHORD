@@ -53,3 +53,9 @@ The displayed High/Moderate label describes the engine's internal match separati
 5. Improve fretboard contact estimation using the existing camera calibration and reject occluded or low-confidence positions.
 6. Expand chord vocabulary and voicing coverage.
 7. Add alternate tunings, capo support and progression recognition.
+
+### Recognition engine update
+- Directly measured note peaks now carry more weight than inferred subharmonics.
+- A weak fundamental may receive limited support from its third harmonic only when no matching fundamental peak is present.
+- Candidate scoring now explicitly rewards evidence for the proposed root and penalises unrelated pitch-class energy. This reduces candidates that previously scored well from matching only two or three non-root chord tones.
+- These are algorithmic improvements, not a claim of calibrated accuracy; real-guitar test captures are still needed to tune thresholds.
