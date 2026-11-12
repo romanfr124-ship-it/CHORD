@@ -1,4 +1,4 @@
-import { findSpectralPeaks, buildPitchClassScores, identifyChord } from "./chord-engine.js";
+import { findSpectralPeaks, buildPitchClassScores, identifyChord, rankChordCandidates, NOTE_NAMES } from "./chord-engine.js";
 import { getSuggestedShape, renderFretboard, renderTab } from "./guitar.js";
 
 const $ = (id) => document.getElementById(id);
@@ -19,7 +19,7 @@ const SILENCE_RESET_MS=850;
 let audioContext=null, mediaStream=null, analyser=null, audioGainNode=null, animationFrame=null;
 let noiseFloor=0.0007;
 let spectrumData=null, timeData=null, state="OFF";
-let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0;
+let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0, lastDiagnosticUpdate=0;
 let capturedScores=[], videoRecorder=null, recordedChunks=[], recordingUrl=null;
 let frameCaptureTimes=[], handLandmarker=null, handTrackingPromise=null, lastHandDetection=0, lastVideoTime=-1, handTrackingReady=false;
 let calibrationMode=false, calibrationPoints=[], currentLandmarks=null, mirroredCanvasStream=null, mirrorDrawFrame=null;
@@ -247,6 +247,47 @@ function median(values){
   const middle=Math.floor(sorted.length/2);
   return sorted.length%2?sorted[middle]:(sorted[middle-1]+sorted[middle])/2;
 }
+function renderLiveDiagnostics(level,peaks,scores,now){
+  if(now-lastDiagnosticUpdate<140)return;
+  lastDiagnosticUpdate=now;
+  const db=20*Math.log10(Math.max(level,0.000001));
+  $("inputLevel").textContent=db.toFixed(1)+" dB";
+  $("inputMeterFill").style.width=Math.max(0,Math.min(100,(db+75)/55*100))+"%";
+  $("peakCount").textContent=String(peaks.length);
+  $("frameCount").textContent=String(capturedScores.length);
+  $("audioState").textContent=state==="ARMED"?"LISTENING":state==="CAPTURING"?"CAPTURING":state==="LOCKED"?"CAPTURED":"OFF";
+  const strongest=[...scores].sort((a,b)=>b.score-a.score).slice(0,5).filter(item=>item.score>0.04);
+  const noteContainer=$("diagnosticNotes");
+  noteContainer.replaceChildren();
+  if(!strongest.length){
+    const empty=document.createElement("span");empty.className="muted";empty.textContent="No clear pitch peaks yet.";noteContainer.append(empty);
+  }else strongest.forEach(item=>{
+    const chip=document.createElement("span");chip.className="diagnostic-note";
+    const name=document.createElement("strong");name.textContent=NOTE_NAMES[item.pitchClass];
+    chip.append(name,document.createTextNode(" "+(item.score*100).toFixed(0)+"%"));
+    noteContainer.append(chip);
+  });
+}
+function renderCandidateDiagnostics(scores){
+  const candidates=rankChordCandidates(scores).slice(0,5);
+  const list=$("candidateList");list.replaceChildren();
+  candidates.forEach((candidate,index)=>{
+    const item=document.createElement("div");item.className="candidate-item";
+    const name=document.createElement("strong");name.textContent=(index+1)+". "+candidate.name;
+    const score=document.createElement("span");score.textContent="Score "+candidate.score.toFixed(3);
+    const evidence=document.createElement("small");
+    evidence.textContent="Notes "+candidate.hits+"/"+candidate.expected.length+" · missing "+candidate.missingTones;
+    item.append(name,score,evidence);list.append(item);
+  });
+  const best=candidates[0];
+  let reason="Candidate ranking available.";
+  if(!best)reason="No chord candidates could be calculated.";
+  else if(best.strongest<0.30)reason="Rejected: strongest expected note is below 0.30.";
+  else if(best.second<0.22)reason="Rejected: fewer than two sufficiently strong chord tones.";
+  else if(best.hits<2)reason="Rejected: fewer than two expected notes passed the evidence threshold.";
+  else if(best.score<0.25)reason="Rejected: overall candidate score is below 0.25.";
+  $("diagnosticReason").textContent=reason;
+}
 function updateNotes(notes){
   const list=$("noteList"); list.replaceChildren();
   notes.forEach(note=>{
@@ -353,13 +394,17 @@ function startVideoRecording(stream){
   }
 }
 function analyseCapture(){
-  if(capturedScores.length<5){showUncertain();return;}
+  if(capturedScores.length<5){
+    $("diagnosticReason").textContent="Capture ended with fewer than five usable analysis frames.";
+    showUncertain();return;
+  }
   const combined=Array.from({length:12},(_,pitchClass)=>{
     const readings=capturedScores.map(frame=>frame[pitchClass].score).sort((a,b)=>a-b);
     // Use a slightly upper-middle reading so notes that decay faster after a
     // strum are not discarded by a strict median across the whole capture.
     return {pitchClass,score:readings[Math.floor((readings.length-1)*0.62)]};
   });
+  renderCandidateDiagnostics(combined);
   const chord=identifyChord(combined);
   if(chord) showChord(chord); else showUncertain();
   captureVideoFrame("Chord capture — final frame");
@@ -372,6 +417,10 @@ function processAudio(now){
   drawSpectrum();
   drawHandLandmarks(now);
   const level=rmsLevel();
+  if(now-lastDiagnosticUpdate>=140){
+    const livePeaks=findSpectralPeaks(spectrumData,audioContext.sampleRate,analyser.fftSize);
+    renderLiveDiagnostics(level,livePeaks,buildPitchClassScores(livePeaks),now);
+  }
 
   if(state==="ARMED"){
     if(level<0.008) noiseFloor=Math.min(0.0015,noiseFloor*0.97+level*0.03);
@@ -498,7 +547,7 @@ function resetDisplay(){
   $("fretboard").className="empty-state";
   $("tabOutput").textContent="No chord detected yet.";
   $("frameStrip").replaceChildren();
-  capturedScores=[]; onsetFrames=0; silenceSince=0;
+  capturedScores=[]; onsetFrames=0; silenceSince=0; $("candidateList").innerHTML='<span class="muted">Candidates appear after a chord capture.</span>'; $("diagnosticReason").textContent="Diagnostics show raw evidence and ranking, not a guarantee of correctness.";
   if(state!=="OFF") state="ARMED";
 }
 $("calibrateButton").addEventListener("click",()=>calibrationMode?(()=>{calibrationMode=false;handOverlay.classList.remove("is-calibrating");$("calibrateButton").textContent="Calibrate fretboard";$("calibrationStatus").textContent="Calibration cancelled.";})():beginCalibration());
