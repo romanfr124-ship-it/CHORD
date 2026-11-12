@@ -11,27 +11,29 @@ const CHORD_TYPES = [
 ];
 export function frequencyToMidi(frequency) { return 69 + 12 * Math.log2(frequency / 440); }
 export function findSpectralPeaks(spectrum, sampleRate, fftSize) {
-  const peaks = [], lowBin = Math.max(2, Math.floor(70 * fftSize / sampleRate));
-  const highBin = Math.min(spectrum.length - 2, Math.ceil(1200 * fftSize / sampleRate));
+  const peaks = [], lowBin = Math.max(2, Math.floor(65 * fftSize / sampleRate));
+  const highBin = Math.min(spectrum.length - 2, Math.ceil(1500 * fftSize / sampleRate));
   for (let bin = lowBin; bin <= highBin; bin++) {
     const left=spectrum[bin-1], centre=spectrum[bin], right=spectrum[bin+1];
-    if (centre <= left || centre < right || centre < -76) continue;
+    if (centre <= left || centre < right || centre < -84) continue;
     const denominator=left-2*centre+right, offset=denominator?0.5*(left-right)/denominator:0;
     const frequency=(bin+offset)*sampleRate/fftSize;
     if (frequency>0) peaks.push({frequency,db:centre,midi:frequencyToMidi(frequency)});
   }
-  return peaks.sort((a,b)=>b.db-a.db).slice(0,48);
+  return peaks.sort((a,b)=>b.db-a.db).slice(0,64);
 }
 export function buildPitchClassScores(peaks) {
   const energy=Array(12).fill(0);
   for (const peak of peaks) {
     const strength=Math.pow(10,peak.db/20), midi=Math.round(peak.midi);
-    energy[((midi%12)+12)%12]+=strength;
+    // Keep some energy at the measured pitch, but favour notes supported by
+    // plausible lower fundamentals so strong overtones do not dominate.
+    energy[((midi%12)+12)%12]+=strength*0.65;
     for(let harmonic=2;harmonic<=5;harmonic++){
       const fundamental=peak.frequency/harmonic;
-      if(fundamental<70) continue;
+      if(fundamental<65) continue;
       const inferred=Math.round(frequencyToMidi(fundamental));
-      energy[((inferred%12)+12)%12]+=strength/(harmonic*3.5);
+      energy[((inferred%12)+12)%12]+=strength/(harmonic*2.8);
     }
   }
   const maximum=Math.max(...energy,0.000001);
@@ -40,7 +42,7 @@ export function buildPitchClassScores(peaks) {
 export function identifyChord(pitchScores) {
   const values=Array(12).fill(0);
   for(const item of pitchScores) values[item.pitchClass]=item.score;
-  const active=pitchScores.filter(item=>item.score>=0.23).map(item=>item.pitchClass);
+  const active=pitchScores.filter(item=>item.score>=0.20).map(item=>item.pitchClass);
   if(active.length<3||active.length>6) return null;
   const ranked=[];
   for(let root=0;root<12;root++) for(const [suffix,intervals] of CHORD_TYPES){
@@ -56,7 +58,7 @@ export function identifyChord(pitchScores) {
   }
   ranked.sort((a,b)=>b.score-a.score);
   const best=ranked[0], margin=best.score-ranked[1].score;
-  if(best.averageSupport<0.43||best.weakestTone<0.20||best.strongestExtra>0.68||best.missingTones>0||margin<0.075) return null;
+  if(best.averageSupport<0.40||best.weakestTone<0.18||best.strongestExtra>0.75||best.missingTones>0||margin<0.065) return null;
   return {...best,margin,name:NOTE_NAMES[best.root]+best.suffix,
     noteNames:active.map(note=>NOTE_NAMES[note]),
     confidenceLabel:margin>=0.16&&best.averageSupport>=0.68?"High":"Moderate"};
