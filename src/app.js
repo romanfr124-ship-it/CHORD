@@ -212,6 +212,8 @@ function updateCalibrationPrompt(){
 function beginCalibration(){
   if(!cameraStream||!cameraPreview.videoWidth){$("calibrationStatus").textContent="Start the camera first. Audio-only mode cannot calibrate the fretboard.";return;}
   calibrationMode=true;calibrationPoints=[];
+  handOverlay.width=cameraPreview.videoWidth;handOverlay.height=cameraPreview.videoHeight;
+  handContext.clearRect(0,0,handOverlay.width,handOverlay.height);
   handOverlay.classList.add("is-calibrating");
   $("calibrateButton").textContent="Cancel calibration";
   updateCalibrationPrompt();
@@ -229,6 +231,8 @@ function handleCalibrationTap(event){
   const y=(event.clientY-rect.top)/rect.height*handOverlay.height;
   const x=handOverlay.width-shownX;
   calibrationPoints.push({x,y});
+  handContext.clearRect(0,0,handOverlay.width,handOverlay.height);
+  drawCalibrationMarkers(handOverlay.width);
   if(calibrationPoints.length<4){updateCalibrationPrompt();return;}
   const [lowNut,low12,highNut,high12]=calibrationPoints;
   const minEdge=Math.min(
