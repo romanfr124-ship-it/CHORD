@@ -23,21 +23,35 @@ export function findSpectralPeaks(spectrum, sampleRate, fftSize) {
   return peaks.sort((a,b)=>b.db-a.db).slice(0,64);
 }
 export function buildPitchClassScores(peaks) {
-  const energy=Array(12).fill(0);
+  const direct=Array(12).fill(0);
+  const inferred=Array(12).fill(0);
+  const measuredMidis=peaks.map(peak=>peak.midi);
   for (const peak of peaks) {
-    const strength=Math.pow(10,peak.db/20), midi=Math.round(peak.midi);
-    // Keep some energy at the measured pitch, but favour notes supported by
-    // plausible lower fundamentals so strong overtones do not dominate.
-    energy[((midi%12)+12)%12]+=strength*0.65;
-    for(let harmonic=2;harmonic<=5;harmonic++){
-      const fundamental=peak.frequency/harmonic;
-      if(fundamental<65) continue;
-      const inferred=Math.round(frequencyToMidi(fundamental));
-      energy[((inferred%12)+12)%12]+=strength/(harmonic*2.8);
+    const strength=Math.pow(10,peak.db/20);
+    const nearestMidi=Math.round(peak.midi);
+    const cents=Math.abs(peak.midi-nearestMidi)*100;
+    const tuningWeight=Math.max(0.35,1-cents/100);
+    const pitchClass=((nearestMidi%12)+12)%12;
+    // Directly measured partials are the strongest evidence. A small
+    // tuning tolerance prevents noisy FFT bins from being treated equally.
+    direct[pitchClass]+=strength*tuningWeight;
+    // A third harmonic can reveal a quiet/missing fundamental, but only
+    // add it when no measured peak already supports that lower note.
+    const possibleFundamental=peak.midi-19.02;
+    if(possibleFundamental>=28) {
+      const hasFundamental=measuredMidis.some(midi=>Math.abs(midi-possibleFundamental)<0.45);
+      if(!hasFundamental) {
+        const inferredMidi=Math.round(possibleFundamental);
+        const inferredClass=((inferredMidi%12)+12)%12;
+        inferred[inferredClass]+=strength*0.075;
+      }
     }
   }
+  const energy=direct.map((value,index)=>value+Math.min(inferred[index],value*0.22));
   const maximum=Math.max(...energy,0.000001);
-  return energy.map((value,pitchClass)=>({pitchClass,score:value/maximum}));
+  return energy.map((value,pitchClass)=>({
+    pitchClass,score:value/maximum,direct:direct[pitchClass]/maximum
+  }));
 }
 export function rankChordCandidates(pitchScores) {
   const values=Array(12).fill(0);
@@ -45,16 +59,22 @@ export function rankChordCandidates(pitchScores) {
   const ranked=[];
   for(let root=0;root<12;root++) for(const [suffix,intervals] of CHORD_TYPES){
     const expected=intervals.map(interval=>(root+interval)%12);
-    const target=expected.map(note=>values[note]).sort((a,b)=>b-a);
-    const strongest=target[0]||0, second=target[1]||0, third=target[2]||0;
-    const averageSupport=target.reduce((sum,value)=>sum+value,0)/target.length;
-    const hits=target.filter(value=>value>=0.19).length;
+    const rootSupport=values[root];
+    const toneSupport=expected.map(note=>values[note]);
+    const sortedSupport=[...toneSupport].sort((a,b)=>b-a);
+    const strongest=sortedSupport[0]||0, second=sortedSupport[1]||0, third=sortedSupport[2]||0;
+    const averageSupport=toneSupport.reduce((sum,value)=>sum+value,0)/toneSupport.length;
+    const hits=toneSupport.filter(value=>value>=0.19).length;
     const extras=values.filter((value,note)=>!expected.includes(note)&&value>=0.18);
     const extraEnergy=extras.reduce((sum,value)=>sum+value,0);
-    const missingTones=target.filter(value=>value<0.19).length;
-    const score=averageSupport*0.48+second*0.34+third*0.18
-      -extraEnergy*0.075-missingTones*0.045;
-    ranked.push({root,suffix,expected,score,averageSupport,strongest,second,third,hits,extraEnergy,missingTones});
+    const missingTones=toneSupport.filter(value=>value<0.19).length;
+    // Keep root identity explicit: sorting all chord tones previously meant
+    // a candidate could score well even when its proposed root was absent.
+    const score=averageSupport*0.34+rootSupport*0.30
+      +second*0.22+third*0.14-extraEnergy*0.11
+      -missingTones*0.035;
+    ranked.push({root,suffix,expected,score,averageSupport,rootSupport,
+      strongest,second,third,hits,extraEnergy,missingTones});
   }
   ranked.sort((a,b)=>b.score-a.score);
   return ranked.map((candidate,index)=>({
