@@ -341,10 +341,12 @@ function startVideoRecording(stream){
 }
 function analyseCapture(){
   if(capturedScores.length<5){showUncertain();return;}
-  const combined=Array.from({length:12},(_,pitchClass)=>({
-    pitchClass,
-    score:median(capturedScores.map(frame=>frame[pitchClass].score))
-  }));
+  const combined=Array.from({length:12},(_,pitchClass)=>{
+    const readings=capturedScores.map(frame=>frame[pitchClass].score).sort((a,b)=>a-b);
+    // Use a slightly upper-middle reading so notes that decay faster after a
+    // strum are not discarded by a strict median across the whole capture.
+    return {pitchClass,score:readings[Math.floor((readings.length-1)*0.62)]};
+  });
   const chord=identifyChord(combined);
   if(chord) showChord(chord); else showUncertain();
   captureVideoFrame("Chord capture — final frame");
