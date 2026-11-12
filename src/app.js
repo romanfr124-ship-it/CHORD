@@ -16,7 +16,7 @@ const CAPTURE_DURATION_MS=1700;
 const SAMPLE_INTERVAL_MS=80;
 const SILENCE_RESET_MS=850;
 
-let audioContext=null, mediaStream=null, analyser=null, audioGainNode=null, animationFrame=null;
+let audioContext=null, mediaStream=null, microphoneStream=null, cameraStream=null, analyser=null, audioGainNode=null, animationFrame=null;
 let noiseFloor=0.0007;
 let spectrumData=null, timeData=null, state="OFF";
 let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0, lastDiagnosticUpdate=0;
@@ -360,6 +360,10 @@ function startVideoRecording(stream){
   recordedChunks=[];
   $("recordingLink").hidden=true;
   $("recordingStatus").textContent="Recording audio and video together…";
+  if(!stream.getVideoTracks().length){
+    $("recordingStatus").textContent="Audio recognition is running. Camera access was unavailable, so video recording and visual fret estimates are disabled.";
+    return;
+  }
   if(!window.MediaRecorder){
     $("recordingStatus").textContent="Live camera is on, but this browser cannot save a video recording.";
     return;
@@ -471,21 +475,40 @@ async function startListening(){
   }
   listenButton.disabled=true;
   try{
-    mediaStream=await navigator.mediaDevices.getUserMedia({
-      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true,channelCount:1},
-      video:{facingMode:{exact:"user"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}
+    // Start the microphone independently: a denied or unavailable camera must
+    // never prevent the core chord-recognition feature from working.
+    microphoneStream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1}
     });
-    cameraPreview.srcObject=mediaStream;
-    await cameraPreview.play().catch(()=>{});
-    $("cameraPlaceholder").hidden=true;
-    $("cameraStatus").textContent="FRONT CAMERA LIVE";
-    const activeVideoTrack=mediaStream.getVideoTracks()[0];
-    if(activeVideoTrack) $("cameraStatus").textContent += activeVideoTrack.getSettings?.().facingMode==="user" ? "" : " · CHECK CAMERA";
-    startVideoRecording(mediaStream);
-    void initHandTracking();
+    try{
+      cameraStream=await navigator.mediaDevices.getUserMedia({
+        audio:false,
+        video:{facingMode:"user",width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}
+      });
+      cameraPreview.srcObject=cameraStream;
+      await cameraPreview.play().catch(()=>{});
+      $("cameraPlaceholder").hidden=true;
+      $("cameraStatus").textContent="FRONT CAMERA LIVE";
+      const activeVideoTrack=cameraStream.getVideoTracks()[0];
+      if(activeVideoTrack) $("cameraStatus").textContent += activeVideoTrack.getSettings?.().facingMode==="user" ? "" : " · CHECK CAMERA";
+    }catch(cameraError){
+      cameraStream=null;
+      $("cameraPlaceholder").hidden=false;
+      $("cameraStatus").textContent="CAMERA UNAVAILABLE · AUDIO ONLY";
+      $("recordingStatus").textContent="Camera access was unavailable. CHORD will still recognise audio.";
+      console.warn("CHORD camera access unavailable; continuing with audio:",cameraError);
+    }
+    mediaStream=new MediaStream([
+      ...microphoneStream.getAudioTracks(),
+      ...(cameraStream?.getVideoTracks()||[])
+    ]);
+    if(cameraStream){
+      startVideoRecording(mediaStream);
+      void initHandTracking();
+    }
     audioContext=new(window.AudioContext||window.webkitAudioContext)();
     await audioContext.resume();
-    const source=audioContext.createMediaStreamSource(mediaStream);
+    const source=audioContext.createMediaStreamSource(microphoneStream);
     audioGainNode=audioContext.createGain();
     audioGainNode.gain.value=1.8;
     analyser=audioContext.createAnalyser();
@@ -499,11 +522,13 @@ async function startListening(){
     waveform.classList.add("is-live");
     setStatus("READY FOR CHORD");
     listenButton.textContent="Stop listening";
-    $("helperText").textContent="Frame your fretting hand and fretboard, then play one chord. Audio and video are captured together.";
+    $("helperText").textContent=cameraStream?"Frame your fretting hand and fretboard, then play one chord. Audio and video are captured together.":"Play one chord near your microphone. Audio recognition is active without the camera.";
     animationFrame=requestAnimationFrame(processAudio);
   }catch(error){
     if(mediaStream)mediaStream.getTracks().forEach(track=>track.stop());
-    mediaStream=null;
+    if(microphoneStream)microphoneStream.getTracks().forEach(track=>track.stop());
+    if(cameraStream)cameraStream.getTracks().forEach(track=>track.stop());
+    mediaStream=null;microphoneStream=null;cameraStream=null;
     cameraPreview.srcObject=null;
     $("cameraPlaceholder").hidden=false;
     $("cameraStatus").textContent="CAMERA OFF";
@@ -521,7 +546,9 @@ async function stopListening(){
   mirrorDrawFrame=null;
   if(mirroredCanvasStream){mirroredCanvasStream.getTracks().forEach(track=>track.stop());mirroredCanvasStream=null;}
   if(mediaStream)mediaStream.getTracks().forEach(track=>track.stop());
-  mediaStream=null;
+  if(microphoneStream)microphoneStream.getTracks().forEach(track=>track.stop());
+  if(cameraStream)cameraStream.getTracks().forEach(track=>track.stop());
+  mediaStream=null;microphoneStream=null;cameraStream=null;
   cameraPreview.pause();
   cameraPreview.srcObject=null;
   handContext.clearRect(0,0,handOverlay.width,handOverlay.height);
@@ -556,6 +583,8 @@ listenButton.addEventListener("click",()=>mediaStream?stopListening():startListe
 resetButton.addEventListener("click",resetDisplay);
 window.addEventListener("pagehide",()=>{
   if(mediaStream)mediaStream.getTracks().forEach(track=>track.stop());
+  if(microphoneStream)microphoneStream.getTracks().forEach(track=>track.stop());
+  if(cameraStream)cameraStream.getTracks().forEach(track=>track.stop());
   if(recordingUrl)URL.revokeObjectURL(recordingUrl);
   if(handLandmarker){handLandmarker.close();handLandmarker=null;}
 });
