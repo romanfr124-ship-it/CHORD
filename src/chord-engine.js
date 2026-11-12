@@ -42,25 +42,41 @@ export function buildPitchClassScores(peaks) {
 export function identifyChord(pitchScores) {
   const values=Array(12).fill(0);
   for(const item of pitchScores) values[item.pitchClass]=item.score;
-  const active=pitchScores.filter(item=>item.score>=0.20).map(item=>item.pitchClass);
-  if(active.length<3||active.length>6) return null;
+
+  // A guitar strum rarely produces six equally loud fundamentals. Compare
+  // templates using their strongest supported tones and penalise unrelated
+  // notes, rather than rejecting a chord because one string is quiet.
   const ranked=[];
   for(let root=0;root<12;root++) for(const [suffix,intervals] of CHORD_TYPES){
     const expected=intervals.map(interval=>(root+interval)%12);
-    const target=expected.map(note=>values[note]);
+    const target=expected.map(note=>values[note]).sort((a,b)=>b-a);
+    const strongest=target[0]||0;
+    const second=target[1]||0;
+    const third=target[2]||0;
     const averageSupport=target.reduce((sum,value)=>sum+value,0)/target.length;
-    const weakestTone=Math.min(...target);
-    const extras=active.filter(note=>!expected.includes(note));
-    const strongestExtra=extras.length?Math.max(...extras.map(note=>values[note])):0;
-    const missingTones=target.filter(value=>value<0.23).length;
-    const score=averageSupport*0.68+weakestTone*0.32-strongestExtra*0.38-missingTones*0.10;
-    ranked.push({root,suffix,expected,active,score,averageSupport,weakestTone,strongestExtra,missingTones});
+    const hits=target.filter(value=>value>=0.19).length;
+    const extras=values.filter((value,note)=>!expected.includes(note)&&value>=0.18);
+    const extraEnergy=extras.reduce((sum,value)=>sum+value,0);
+    const missingTones=target.filter(value=>value<0.19).length;
+    const score=averageSupport*0.48+second*0.34+third*0.18
+      -extraEnergy*0.075-missingTones*0.045;
+    ranked.push({root,suffix,expected,score,averageSupport,strongest,second,third,hits,extraEnergy,missingTones});
   }
   ranked.sort((a,b)=>b.score-a.score);
-  const best=ranked[0], margin=best.score-ranked[1].score;
-  if(best.averageSupport<0.40||best.weakestTone<0.18||best.strongestExtra>0.75||best.missingTones>0||margin<0.065) return null;
-  return {...best,margin,name:NOTE_NAMES[best.root]+best.suffix,
-    noteNames:active.map(note=>NOTE_NAMES[note]),
-    confidenceLabel:margin>=0.16&&best.averageSupport>=0.68?"High":"Moderate"};
+  const best=ranked[0], runnerUp=ranked[1], margin=best.score-runnerUp.score;
+  if(!best||best.strongest<0.30||best.second<0.22||best.hits<2||best.score<0.25) return null;
+
+  const detected=best.expected
+    .filter(note=>values[note]>=0.14)
+    .map(note=>NOTE_NAMES[note]);
+  const confidenceLabel=margin>=0.09&&best.third>=0.20?"High"
+    :margin>=0.035?"Moderate":"Low";
+  return {
+    ...best,
+    margin,
+    name:NOTE_NAMES[best.root]+best.suffix,
+    noteNames:detected,
+    confidenceLabel
+  };
 }
 export { NOTE_NAMES };
