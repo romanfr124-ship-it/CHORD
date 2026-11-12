@@ -223,10 +223,23 @@ function rmsLevel(){
 }
 function drawSpectrum(){
   analyser.getFloatFrequencyData(spectrumData);
-  const bars=[...waveform.children], stride=Math.max(1,Math.floor(spectrumData.length/bars.length));
+  const bars=[...waveform.children];
+  const nyquist=audioContext.sampleRate/2;
+  const minFrequency=65;
+  const maxFrequency=Math.min(1500,nyquist);
+  const toBin=frequency=>Math.max(1,Math.min(spectrumData.length-1,
+    Math.round(frequency/nyquist*spectrumData.length)));
   bars.forEach((bar,index)=>{
-    const db=spectrumData[index*stride];
-    bar.style.height=Math.max(4,Math.min(52,(db+100)*0.9))+"px";
+    // Space the bars logarithmically so bass notes and upper harmonics both
+    // get visible room instead of showing only the first few FFT bins.
+    const startFrequency=minFrequency*Math.pow(maxFrequency/minFrequency,index/bars.length);
+    const endFrequency=minFrequency*Math.pow(maxFrequency/minFrequency,(index+1)/bars.length);
+    const startBin=toBin(startFrequency);
+    const endBin=Math.max(startBin+1,toBin(endFrequency));
+    let db=-110;
+    for(let bin=startBin;bin<=endBin;bin++) db=Math.max(db,spectrumData[bin]);
+    const height=4+Math.max(0,Math.min(1,(db+100)/65))*48;
+    bar.style.height=height+"px";
   });
 }
 function median(values){
