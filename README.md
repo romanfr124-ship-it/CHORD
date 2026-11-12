@@ -2,9 +2,10 @@
 
 A dark, minimal guitar chord recognition web app. CHORD listens for one guitar chord, captures a short analysis window, and only displays a chord when the evidence passes conservative matching checks.
 
-## Current prototype (0.4)
+## Current prototype (0.9)
 
-- Continuous microphone monitoring while the page is open.
+- Continuous microphone monitoring with a live input-level meter and logarithmic guitar-frequency waveform.
+- Audio diagnostics showing strongest pitch classes, spectral peak count, capture-frame count and ranked chord candidates with rejection reasons.
 - One chord capture at a time: audio onset starts a 1.25-second analysis window.
 - Multiple spectral frames are combined before chord identification.
 - Ambiguous or weak matches are rejected rather than displaying the nearest guess.
@@ -45,11 +46,10 @@ The displayed High/Moderate label describes the engine's internal match separati
 
 ## Next engineering milestones
 
-1. Add a user-guided fretboard calibration step so the camera view can be mapped to string and fret coordinates.
-2. Estimate fingertip contact points against the calibrated fretboard and reject occluded or low-confidence positions.
-
-1. Validate against a labelled test set of clean guitar recordings across strings, registers and playing styles.
-2. Replace the first-pass spectral heuristic with a validated polyphonic pitch-estimation approach and temporal evidence scoring.
-3. Calibrate rejection thresholds using measured false-positive and false-negative rates.
-4. Expand chord vocabulary and voicing coverage.
-5. Add alternate tunings, capo support and progression recognition.
+1. Use diagnostic captures from real guitars to identify microphone, peak-detection and harmonic-confusion problems.
+2. Validate against a labelled test set of clean guitar recordings across strings, registers and playing styles.
+3. Replace the first-pass spectral heuristic with a validated polyphonic pitch-estimation approach and temporal evidence scoring.
+4. Calibrate rejection thresholds using measured false-positive and false-negative rates.
+5. Improve fretboard contact estimation using the existing camera calibration and reject occluded or low-confidence positions.
+6. Expand chord vocabulary and voicing coverage.
+7. Add alternate tunings, capo support and progression recognition.
