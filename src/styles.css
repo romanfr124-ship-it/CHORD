@@ -105,3 +105,23 @@ footer { text-align:center; color:#66717e; font-size:10px; margin-top:26px; }
 .calibration-tools .quiet-button { padding:10px 16px; }
 #calibrationStatus { margin:9px 0; }
 .fret-readout { color:var(--accent); font-size:12px; line-height:1.6; min-height:20px; }
+
+
+/* Audio diagnostics */
+.diagnostics-panel { grid-column:1 / -1; }
+.diagnostic-meter { height:9px; border-radius:99px; overflow:hidden; background:#252d36; margin:2px 0 14px; }
+.diagnostic-meter div { width:0%; height:100%; background:var(--accent); border-radius:inherit; transition:width .08s linear; }
+.diagnostic-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.diagnostic-stats div { display:flex; flex-direction:column; gap:5px; padding:10px; background:var(--panel-raised); border-radius:9px; }
+.diagnostic-stats span,.diagnostic-caption { color:var(--muted); font-size:9px; letter-spacing:.1em; }
+.diagnostic-stats strong { font-size:17px; font-weight:750; }
+.diagnostic-caption { margin:15px 0 8px; }
+.diagnostic-notes,.candidate-list { display:flex; flex-wrap:wrap; gap:7px; }
+.diagnostic-note,.candidate-item { border:1px solid var(--line); background:var(--panel-raised); border-radius:8px; padding:7px 9px; font-size:11px; }
+.diagnostic-note strong,.candidate-item strong { color:var(--accent); }
+.candidate-item { display:flex; flex-direction:column; gap:4px; min-width:88px; }
+.candidate-item small { color:var(--muted); font-size:9px; }
+@media(max-width:560px) {
+  .diagnostic-stats strong { font-size:14px; }
+  .diagnostic-stats span { font-size:8px; }
+}
