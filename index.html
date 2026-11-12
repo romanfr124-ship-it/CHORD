@@ -35,8 +35,8 @@
       </div>
       <div class="hand-status-row"><span class="hand-indicator" id="handStatus">HAND TRACKING NOT STARTED</span><span class="muted small">Keep your fretting hand visible</span></div>
       <div class="calibration-tools">
-        <button class="quiet-button" id="calibrateButton" type="button">Calibrate fretboard</button>
-        <p class="muted small" id="calibrationStatus">For best results, place the phone so the front camera can see the fretboard from above. Calibration uses the nut and 12th-fret corners.</p>
+        <div class="calibration-actions"><button class="quiet-button" id="calibrateButton" type="button">Calibrate fretboard</button><button class="quiet-button" id="calibrationUndoButton" type="button" hidden>Undo last point</button></div>
+        <p class="muted small" id="calibrationStatus">Keep the whole fretboard in view. Tap the four corners in order: low-E nut, low-E 12th fret, high-e nut, high-e 12th fret. You can undo the last point.</p>
         <p class="fret-readout" id="fretReadout">Fretboard not calibrated. Supports visible positions up to the 24th fret and possible barre detection.</p>
       </div>
       <div class="recording-row">
@@ -44,7 +44,7 @@
         <a id="recordingLink" class="recording-link" hidden>Save session video</a>
       </div>
       <div class="frame-strip" id="frameStrip" aria-label="Video frames captured during chord analysis"></div>
-      <p class="muted small">Front camera preview is mirrored. Calibrate the four fretboard corners before visual fret estimates. Audio input is boosted for quieter playing; use a quiet room and play one clean chord at a time. Estimates are approximate and must be checked against the audio.</p>
+      <p class="muted small">Front camera preview is mirrored. Calibration guides you through four corner taps; keep the whole neck visible and the phone still. Audio input is boosted for quieter playing; use a quiet room and play one clean chord at a time. Estimates are approximate and must be checked against the audio.</p>
     </section>
     <section class="results-grid">
       <article class="panel">
