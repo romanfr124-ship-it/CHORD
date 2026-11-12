@@ -102,6 +102,10 @@ footer { text-align:center; color:#66717e; font-size:10px; margin-top:26px; }
 #handOverlay { pointer-events:none; }
 #handOverlay.is-calibrating { pointer-events:auto; cursor:crosshair; touch-action:manipulation; }
 .calibration-tools { margin-top:12px; }
+.calibration-actions { display:flex; flex-wrap:wrap; gap:8px; }
+#calibrationUndoButton[hidden] { display:none; }
+#handOverlay.is-calibrating { touch-action:none; }
+#calibrationStatus { min-height:34px; }
 .calibration-tools .quiet-button { padding:10px 16px; }
 #calibrationStatus { margin:9px 0; }
 .fret-readout { color:var(--accent); font-size:12px; line-height:1.6; min-height:20px; }
