@@ -10,13 +10,14 @@ const handContext = handOverlay.getContext("2d");
 for (let index=0; index<31; index++) waveform.append(document.createElement("span"));
 
 const FFT_SIZE=16384;
-const ONSET_RMS=0.012;
-const SILENCE_RMS=0.005;
-const CAPTURE_DURATION_MS=1250;
-const SAMPLE_INTERVAL_MS=105;
+const ONSET_RMS=0.0025;
+const SILENCE_RMS=0.0015;
+const CAPTURE_DURATION_MS=1700;
+const SAMPLE_INTERVAL_MS=80;
 const SILENCE_RESET_MS=850;
 
-let audioContext=null, mediaStream=null, analyser=null, animationFrame=null;
+let audioContext=null, mediaStream=null, analyser=null, audioGainNode=null, animationFrame=null;
+let noiseFloor=0.0007;
 let spectrumData=null, timeData=null, state="OFF";
 let onsetFrames=0, silenceSince=0, captureStarted=0, lastSampleAt=0;
 let capturedScores=[], videoRecorder=null, recordedChunks=[], recordingUrl=null;
@@ -155,7 +156,7 @@ function drawFretEstimates(landmarks,width,height){
     const stringIndex=Math.round(stringPosition);
     if(Math.abs(stringPosition-stringIndex)>0.62)continue;
     const fretValue=-12*Math.log2(Math.max(0.0001,1-0.5*board.u));
-    const fret=Math.max(0,Math.min(12,Math.round(fretValue)));
+    const fret=Math.max(0,Math.min(24,Math.round(fretValue)));
     if(fretValue<0.55)continue;
     results.push({finger,stringIndex,fret,point});
     handContext.beginPath();
@@ -358,7 +359,9 @@ function processAudio(now){
   const level=rmsLevel();
 
   if(state==="ARMED"){
-    if(level>ONSET_RMS) onsetFrames++; else onsetFrames=0;
+    if(level<0.008) noiseFloor=Math.min(0.004,noiseFloor*0.97+level*0.03);
+    const onsetThreshold=Math.max(ONSET_RMS,noiseFloor*2.4);
+    if(level>onsetThreshold) onsetFrames++; else onsetFrames=0;
     if(onsetFrames>=2){
       state="CAPTURING";
       captureStarted=now;
@@ -386,7 +389,7 @@ function processAudio(now){
     }
     if(now-captureStarted>=CAPTURE_DURATION_MS) analyseCapture();
   } else if(state==="LOCKED"){
-    if(level<SILENCE_RMS){
+    if(level<Math.max(SILENCE_RMS,noiseFloor*1.8)){
       if(!silenceSince) silenceSince=now;
       if(now-silenceSince>=SILENCE_RESET_MS){
         state="ARMED"; silenceSince=0; onsetFrames=0;
@@ -405,7 +408,7 @@ async function startListening(){
   listenButton.disabled=true;
   try{
     mediaStream=await navigator.mediaDevices.getUserMedia({
-      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},
+      audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true,channelCount:1},
       video:{facingMode:{exact:"user"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30,max:30}}
     });
     cameraPreview.srcObject=mediaStream;
@@ -419,13 +422,16 @@ async function startListening(){
     audioContext=new(window.AudioContext||window.webkitAudioContext)();
     await audioContext.resume();
     const source=audioContext.createMediaStreamSource(mediaStream);
+    audioGainNode=audioContext.createGain();
+    audioGainNode.gain.value=1.8;
     analyser=audioContext.createAnalyser();
     analyser.fftSize=FFT_SIZE;
-    analyser.smoothingTimeConstant=0.25;
-    source.connect(analyser);
+    analyser.smoothingTimeConstant=0.12;
+    source.connect(audioGainNode);
+    audioGainNode.connect(analyser);
     spectrumData=new Float32Array(analyser.frequencyBinCount);
     timeData=new Float32Array(analyser.fftSize);
-    state="ARMED"; onsetFrames=0; silenceSince=0;
+    state="ARMED"; onsetFrames=0; silenceSince=0; noiseFloor=0.0007;
     waveform.classList.add("is-live");
     setStatus("READY FOR CHORD");
     listenButton.textContent="Stop listening";
@@ -460,7 +466,7 @@ async function stopListening(){
   $("cameraPlaceholder").hidden=false;
   $("cameraStatus").textContent="CAMERA OFF";
   if(audioContext)await audioContext.close();
-  audioContext=null; analyser=null; spectrumData=null; timeData=null; state="OFF";
+  audioContext=null; analyser=null; audioGainNode=null; spectrumData=null; timeData=null; state="OFF"; noiseFloor=0.0007;
   waveform.classList.remove("is-live");
   setStatus("MICROPHONE OFF",false);
   listenButton.textContent="Start listening";
